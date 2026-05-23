@@ -9,4 +9,4 @@ pub mod tone;
 mod tests;
 
 pub use crate::engine::UltraFastViEngine;
-pub use crate::modes::InputMethod;
+pub use crate::modes::{InputMethod, ModeTrait, TelexMode, VniMode};

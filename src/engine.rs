@@ -1,5 +1,5 @@
 use crate::buffers::{OutBuffer, RawBuffer, new_out_buffer, new_raw_buffer};
-use crate::modes::{IS_TONE_KEY, IS_VOWEL, InputMethod, Mode, mode_for};
+use crate::modes::{IS_TONE_KEY, IS_VOWEL, InputMethod, Mode, ModeTrait, ResolverKind, mode_for, TelexMode, VniMode};
 use crate::tone::{is_vowel_unicode, map_vowel_with_tone};
 
 /// Bitmask lookup table for invalid Vietnamese consonant pairs.
@@ -66,6 +66,7 @@ impl UltraFastViEngine {
         self.render_str()
     }
 
+    #[inline(always)]
     fn render_str(&mut self) -> &str {
         if self.raw_buffer.is_empty() {
             self.out_buffer.clear();
@@ -73,100 +74,98 @@ impl UltraFastViEngine {
         }
 
         let bytes_all = self.raw_buffer.as_bytes();
-        let bytes = &bytes_all[..bytes_all.len().min(32)];
+        let len = bytes_all.len().min(32);
 
-        // Filter tone + Toggling (ddd -> d) in one pass
-        let mut toggled = [0u8; 32];
+        // Filter tone + Toggling in one pass.
+        // Table lookups use get_unchecked (index is u8, tables are [u8; 256]).
+        // Lookahead bounds checks only run for tone keys (rare and predictable branch).
+        let mut toggled = [0u8; 40];
         let mut t_len = 0usize;
         let mut last_tone_char = 0u8;
         let mut tone_cancelled = false;
-        // State for toggling: track consecutive count of the current character
         let mut run_char: u8 = 0;
         let mut run_count: u8 = 0;
-        // Flags for deferred bubbling (computed during this pass, zero extra cost)
-        let mut seen_mod: u8 = 0;     // bitmask: bit0=a, bit1=e, bit2=o, bit3=d
+        let mut seen_mod: u8 = 0;
         let mut need_mod_bubble = false;
         let mut has_w = false;
 
-        for (idx, &b) in bytes.iter().enumerate() {
-            let attr = self.mode.classify[b as usize];
+        let mut idx = 0usize;
+        while idx < len {
+            let b = unsafe { *bytes_all.get_unchecked(idx) };
+            let attr = unsafe { *self.mode.classify.get_unchecked(b as usize) };
             let is_tone = (attr & IS_TONE_KEY) != 0;
 
             if is_tone {
-                // Rule 1: First character is always treated as consonant/content
                 if idx == 0 {
-                    run_char = b;
-                    run_count = 1;
-                    toggled[t_len] = b;
+                    // Rule 1: First char is always literal
+                    unsafe { *toggled.get_unchecked_mut(t_len) = b; }
                     t_len += 1;
+                    idx += 1;
                     continue;
                 }
 
-                // Rule 2: 'r' after certain consonants forms a cluster (tr, pr, fr, cr, br, dr, gr, kr)
+                // Rule 2: 'r' after certain consonants forms a cluster
                 if b == b'r' {
-                    let prev = bytes[idx - 1];
+                    let prev = unsafe { *bytes_all.get_unchecked(idx - 1) };
                     if matches!(prev, b't' | b'p' | b'f' | b'c' | b'b' | b'd' | b'g' | b'k') {
-                        run_char = b;
-                        run_count = 1;
-                        toggled[t_len] = b;
+                        unsafe { *toggled.get_unchecked_mut(t_len) = b; }
                         t_len += 1;
+                        idx += 1;
                         continue;
                     }
                 }
 
-                // Double tone key cancellation: ss, ff, rr, xx, jj -> undo tone, put key back
+                // Double tone key cancellation
                 if b == last_tone_char {
-                    if t_len < 32 {
-                        toggled[t_len] = b;
-                        t_len += 1;
-                    }
+                    unsafe { *toggled.get_unchecked_mut(t_len) = b; }
+                    t_len += 1;
                     last_tone_char = 0;
                     tone_cancelled = true;
+                    idx += 1;
                     continue;
                 }
 
                 // If tone was previously cancelled, subsequent tone keys are literals
                 if tone_cancelled {
-                    if t_len < 32 {
-                        toggled[t_len] = b;
-                        t_len += 1;
-                    }
+                    unsafe { *toggled.get_unchecked_mut(t_len) = b; }
+                    t_len += 1;
+                    idx += 1;
                     continue;
                 }
 
-                // General rule: a tone key immediately followed by a vowel in the raw input
-                // is a consonant in the original word structure, not a tone marker.
-                // Vietnamese tone keys always appear at syllable end, never between vowels.
-                // e.g. "reset" → s between e's is a consonant, not tone sắc.
-                if idx + 1 < bytes.len() {
-                    let next_attr = self.mode.classify[bytes[idx + 1] as usize];
+                // Rule 3: tone key between vowels with trailing consonant → literal.
+                // Single branch covers both lookaheads; tone keys are rare so branch is predictable.
+                if idx + 2 < len {
+                    let next = unsafe { *bytes_all.get_unchecked(idx + 1) };
+                    let next_attr = unsafe { *self.mode.classify.get_unchecked(next as usize) };
                     if (next_attr & IS_VOWEL) != 0 {
-                        run_char = b;
-                        run_count = 1;
-                        toggled[t_len] = b;
-                        t_len += 1;
-                        continue;
+                        let after_next = unsafe { *bytes_all.get_unchecked(idx + 2) };
+                        let after_next_attr = unsafe { *self.mode.classify.get_unchecked(after_next as usize) };
+                        if (after_next_attr & IS_VOWEL) == 0 {
+                            unsafe { *toggled.get_unchecked_mut(t_len) = b; }
+                            t_len += 1;
+                            idx += 1;
+                            continue;
+                        }
                     }
                 }
 
-                // Strip tone key and record it
                 last_tone_char = b;
             } else {
-                // Fused toggling: detect triple-repeat (aaa->a, ddd->d, etc.)
+                // Fused toggling: detect triple-repeat
                 if b == run_char {
                     run_count += 1;
                     if run_count == 3 && matches!(b, b'a' | b'e' | b'o' | b'd') {
                         t_len -= 1;
                         run_count = 1;
+                        idx += 1;
                         continue;
                     }
                 } else {
                     run_char = b;
                     run_count = 1;
                 }
-                // Track modifier/w flags for deferred bubbling
-                // Only set need_mod_bubble for NON-ADJACENT duplicates (adjacent pairs
-                // like oo, ee, dd are already handled by the resolver)
+
                 let is_adjacent = b == run_char && run_count == 2;
                 match b {
                     b'a' => { let bit = 1u8 << 0; if seen_mod & bit != 0 && !is_adjacent { need_mod_bubble = true; } seen_mod |= bit; }
@@ -176,37 +175,39 @@ impl UltraFastViEngine {
                     b'w' => { has_w = true; }
                     _ => {}
                 }
-                toggled[t_len] = b;
+
+                unsafe { *toggled.get_unchecked_mut(t_len) = b; }
                 t_len += 1;
             }
+            idx += 1;
         }
 
-        // Fused modifier + w bubbling pass (single buffer copy)
-        // Always bubble when non-adjacent duplicate modifiers found.
-        // Validation catches invalid results (e.g. "electronic" → êlctronic → rejected).
-        // The tone-between-vowels rule prevents false adjacency (e.g. "reset" → s stays literal).
+        // Fused modifier + w bubbling pass
         const W_LITERAL: u8 = 0x01;
         let need_w_pass = has_w && self.mode.enable_w_bubbling;
         {
             if need_mod_bubble || need_w_pass {
-                let mut buf = [0u8; 32];
+                let mut buf = [0u8; 40];
                 let mut b_len = 0usize;
 
-                // Phase 1: modifier bubbling + double-w collapse in one scan
-                let mut last_pos: [u8; 4] = [0xFF; 4]; // a,e,o,d buf positions (0xFF = none)
+                // Phase 1: modifier bubbling + double-w collapse
+                let mut last_pos: [u8; 4] = [0xFF; 4];
                 let mut wi = 0usize;
                 while wi < t_len {
-                    let c = toggled[wi];
+                    let c = unsafe { *toggled.get_unchecked(wi) };
 
                     // Double-w cancellation
                     if c == b'w' && self.mode.enable_w_bubbling {
-                        if wi + 1 < t_len && toggled[wi + 1] == b'w' {
-                            buf[b_len] = W_LITERAL;
-                            b_len += 1;
-                            wi += 2;
-                            continue;
+                        if wi + 1 < t_len {
+                            let next_c = unsafe { *toggled.get_unchecked(wi + 1) };
+                            if next_c == b'w' {
+                                unsafe { *buf.get_unchecked_mut(b_len) = W_LITERAL; }
+                                b_len += 1;
+                                wi += 2;
+                                continue;
+                            }
                         }
-                        buf[b_len] = c;
+                        unsafe { *buf.get_unchecked_mut(b_len) = c; }
                         b_len += 1;
                         wi += 1;
                         continue;
@@ -223,12 +224,11 @@ impl UltraFastViEngine {
 
                     if let Some(s) = slot {
                         if last_pos[s] != 0xFF {
-                            // Bubble: insert next to first occurrence
                             let insert_at = last_pos[s] as usize + 1;
                             buf.copy_within(insert_at..b_len, insert_at + 1);
-                            buf[insert_at] = c;
+                            unsafe { *buf.get_unchecked_mut(insert_at) = c; }
                             b_len += 1;
-                            last_pos[s] = 0xFF; // consumed
+                            last_pos[s] = 0xFF;
                             for p in last_pos.iter_mut() {
                                 if *p != 0xFF && *p as usize >= insert_at {
                                     *p += 1;
@@ -236,38 +236,41 @@ impl UltraFastViEngine {
                             }
                         } else {
                             last_pos[s] = b_len as u8;
-                            buf[b_len] = c;
+                            unsafe { *buf.get_unchecked_mut(b_len) = c; }
                             b_len += 1;
                         }
                     } else {
-                        buf[b_len] = c;
+                        unsafe { *buf.get_unchecked_mut(b_len) = c; }
                         b_len += 1;
                     }
                     wi += 1;
                 }
 
-                // Phase 2: w-bubbling in-place on buf (only if needed)
+                // Phase 2: w-bubbling in-place
                 if need_w_pass {
-                    let mut out = [0u8; 32];
+                    let mut out = [0u8; 40];
                     let mut o_len = 0usize;
                     let mut last_target_pos: Option<usize> = None;
 
                     for k in 0..b_len {
-                        let c = buf[k];
+                        let c = unsafe { *buf.get_unchecked(k) };
                         if c == b'w' {
                             if let Some(tp) = last_target_pos {
                                 let insert_at = tp + 1;
-                                out.copy_within(insert_at..o_len, insert_at + 1);
-                                out[insert_at] = b'w';
+                                if insert_at < o_len {
+                                    out.copy_within(insert_at..o_len, insert_at + 1);
+                                }
+                                unsafe { *out.get_unchecked_mut(insert_at) = b'w'; }
                                 o_len += 1;
+                                last_target_pos = Some(insert_at);
                             } else {
-                                out[o_len] = b'w';
+                                unsafe { *out.get_unchecked_mut(o_len) = b'w'; }
                                 o_len += 1;
                             }
                         } else {
-                            out[o_len] = c;
+                            unsafe { *out.get_unchecked_mut(o_len) = c; }
                             o_len += 1;
-                            if self.mode.w_target[c as usize] {
+                            if unsafe { *self.mode.w_target.get_unchecked(c as usize) } {
                                 last_target_pos = Some(o_len - 1);
                             }
                         }
@@ -282,13 +285,16 @@ impl UltraFastViEngine {
         }
 
         // Resolve mode rules & Build Char Buffer
+        // Pad toggled with sentinel so resolver loop needs no Option/branching.
+        unsafe { *toggled.get_unchecked_mut(t_len) = 0; }
+
         let mut char_buf = ['\0'; 32];
         let mut c_len = 0usize;
         let mut vowel_mask = 0u16;
 
         let mut i = 0usize;
         while i < t_len {
-            let curr = toggled[i];
+            let curr = unsafe { *toggled.get_unchecked(i) };
 
             // W_LITERAL sentinel: output literal 'w', skip resolver
             if curr == W_LITERAL {
@@ -298,49 +304,42 @@ impl UltraFastViEngine {
                 continue;
             }
 
-            let next = if i + 1 < t_len {
-                Some(toggled[i + 1])
-            } else {
-                None
-            };
+            // SAFETY: toggled is padded with sentinel at t_len, so toggled[i+1] is always valid.
+            let next = unsafe { *toggled.get_unchecked(i + 1) };
 
-            let (mut c, consumed) = (self.mode.resolver)(curr, next);
+            // Static dispatch: compiler inlines the specific resolver per enum arm.
+            let (mut c, consumed) = match self.mode.resolver {
+                ResolverKind::Telex => TelexMode::resolve(curr, next),
+                ResolverKind::Vni => VniMode::resolve(curr, next),
+            };
 
             // uow -> ươ
             if curr == b'u' && !consumed {
-                if let Some(n) = next {
-                    if n == b'o' {
-                        if i + 2 < t_len && toggled[i + 2] == b'w' {
-                            let is_qu = if i > 0 {
-                                let prev = toggled[i - 1];
-                                prev == b'q' || prev == b'Q'
-                            } else {
-                                false
-                            };
-
-                            if !is_qu {
-                                c = 'ư';
-                            }
+                if next == b'o' {
+                    if i + 2 < t_len && unsafe { *toggled.get_unchecked(i + 2) } == b'w' {
+                        let is_qu = if i > 0 {
+                            let prev = unsafe { *toggled.get_unchecked(i - 1) };
+                            prev == b'q' || prev == b'Q'
+                        } else {
+                            false
+                        };
+                        if !is_qu {
+                            c = 'ư';
                         }
                     }
                 }
             }
 
             if is_vowel_unicode(c) {
-                if c_len < 16 {
-                    vowel_mask |= 1 << c_len;
-                }
+                vowel_mask |= 1 << c_len;
             }
 
             char_buf[c_len] = c;
             c_len += 1;
-
             i += if consumed { 2 } else { 1 };
         }
 
-        // If no vowels in the resolved output and tone keys were stripped, fall back to raw
-        // This handles cases like "txt", "sx" where tone keys have no vowel to act on
-        // Exception: if a modifier was applied (e.g. dd -> đ), keep the resolved output
+        // If no vowels in resolved output and tone keys were stripped, fall back to raw
         if vowel_mask == 0 && last_tone_char != 0 && !tone_cancelled {
             let has_modified = char_buf[..c_len].iter().any(|&c| !c.is_ascii());
             if !has_modified {
@@ -359,7 +358,7 @@ impl UltraFastViEngine {
 
         // Tone Placement
         if last_tone_char > 0 {
-            let tone_id = self.mode.tone[last_tone_char as usize];
+            let tone_id = unsafe { *self.mode.tone.get_unchecked(last_tone_char as usize) };
             self.apply_tone_in_place(&mut char_buf[..c_len], vowel_mask, tone_id);
         }
 
@@ -413,10 +412,12 @@ impl UltraFastViEngine {
         }
 
         if first_vowel_pos == 2 {
-            let c1 = chars[0] as u32;
-            let c2 = chars[1] as u32;
-            if c1 >= b'a' as u32 && c1 <= b'z' as u32 && c2 >= b'a' as u32 && c2 <= b'z' as u32 {
-                let table_idx = (c1 - b'a' as u32) as usize * 26 + (c2 - b'a' as u32) as usize;
+            let c1 = chars[0];
+            let c2 = chars[1];
+            if c1.is_ascii_lowercase() && c2.is_ascii_lowercase() {
+                let b1 = c1 as u32 - b'a' as u32;
+                let b2 = c2 as u32 - b'a' as u32;
+                let table_idx = b1 as usize * 26 + b2 as usize;
                 if INVALID_PAIR_TABLE[table_idx] {
                     return true;
                 }

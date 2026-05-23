@@ -8,13 +8,16 @@ pub enum InputMethod {
     Vni,
 }
 
-type ResolverFn = fn(u8, Option<u8>) -> (char, bool);
+pub enum ResolverKind {
+    Telex,
+    Vni,
+}
 
 pub struct Mode {
     pub classify: &'static [u8; 256],
     pub tone: &'static [u8; 256],
     pub w_target: &'static [bool; 256],
-    pub resolver: ResolverFn,
+    pub resolver: ResolverKind,
     pub enable_w_bubbling: bool,
 }
 
@@ -29,7 +32,7 @@ const TELEX_MODE: Mode = Mode {
     classify: &CLASSIFY_TELEX,
     tone: &TONE_TELEX,
     w_target: &W_TARGET_TELEX,
-    resolver: resolve_telex,
+    resolver: ResolverKind::Telex,
     enable_w_bubbling: true,
 };
 
@@ -37,9 +40,46 @@ const VNI_MODE: Mode = Mode {
     classify: &CLASSIFY_VNI,
     tone: &TONE_VNI,
     w_target: &W_TARGET_VNI,
-    resolver: resolve_vni,
+    resolver: ResolverKind::Vni,
     enable_w_bubbling: false,
 };
+
+/// Static-dispatch trait for monomorphized resolver calls.
+/// TelexMode and VniMode are zero-sized types used as type parameters.
+pub trait ModeTrait {
+    const CLASSIFY: &'static [u8; 256];
+    const TONE: &'static [u8; 256];
+    const W_TARGET: &'static [bool; 256];
+    const ENABLE_W_BUBBLING: bool;
+
+    fn resolve(curr: u8, next: u8) -> (char, bool);
+}
+
+pub struct TelexMode;
+impl ModeTrait for TelexMode {
+    const CLASSIFY: &'static [u8; 256] = &CLASSIFY_TELEX;
+    const TONE: &'static [u8; 256] = &TONE_TELEX;
+    const W_TARGET: &'static [bool; 256] = &W_TARGET_TELEX;
+    const ENABLE_W_BUBBLING: bool = true;
+
+    #[inline(always)]
+    fn resolve(curr: u8, next: u8) -> (char, bool) {
+        resolve_telex(curr, next)
+    }
+}
+
+pub struct VniMode;
+impl ModeTrait for VniMode {
+    const CLASSIFY: &'static [u8; 256] = &CLASSIFY_VNI;
+    const TONE: &'static [u8; 256] = &TONE_VNI;
+    const W_TARGET: &'static [bool; 256] = &W_TARGET_VNI;
+    const ENABLE_W_BUBBLING: bool = false;
+
+    #[inline(always)]
+    fn resolve(curr: u8, next: u8) -> (char, bool) {
+        resolve_vni(curr, next)
+    }
+}
 
 pub const CLASSIFY_TELEX: [u8; 256] = {
     let mut t = [0u8; 256];
@@ -114,30 +154,30 @@ pub const TONE_VNI: [u8; 256] = {
 };
 
 #[inline(always)]
-fn resolve_telex(curr: u8, next: Option<u8>) -> (char, bool) {
+fn resolve_telex(curr: u8, next: u8) -> (char, bool) {
     match (curr, next) {
-        (b'a', Some(b'a')) => ('â', true),
-        (b'a', Some(b'w')) => ('ă', true),
-        (b'e', Some(b'e')) => ('ê', true),
-        (b'o', Some(b'o')) => ('ô', true),
-        (b'o', Some(b'w')) => ('ơ', true),
-        (b'u', Some(b'w')) => ('ư', true),
-        (b'd', Some(b'd')) => ('đ', true),
+        (b'a', b'a') => ('â', true),
+        (b'a', b'w') => ('ă', true),
+        (b'e', b'e') => ('ê', true),
+        (b'o', b'o') => ('ô', true),
+        (b'o', b'w') => ('ơ', true),
+        (b'u', b'w') => ('ư', true),
+        (b'd', b'd') => ('đ', true),
         (b'w', _) => ('ư', false),
         _ => (curr as char, false),
     }
 }
 
 #[inline(always)]
-fn resolve_vni(curr: u8, next: Option<u8>) -> (char, bool) {
+fn resolve_vni(curr: u8, next: u8) -> (char, bool) {
     match (curr, next) {
-        (b'a', Some(b'6')) => ('â', true),
-        (b'a', Some(b'8')) => ('ă', true),
-        (b'e', Some(b'6')) => ('ê', true),
-        (b'o', Some(b'6')) => ('ô', true),
-        (b'o', Some(b'7')) => ('ơ', true),
-        (b'u', Some(b'7')) => ('ư', true),
-        (b'd', Some(b'9')) => ('đ', true),
+        (b'a', b'6') => ('â', true),
+        (b'a', b'8') => ('ă', true),
+        (b'e', b'6') => ('ê', true),
+        (b'o', b'6') => ('ô', true),
+        (b'o', b'7') => ('ơ', true),
+        (b'u', b'7') => ('ư', true),
+        (b'd', b'9') => ('đ', true),
         _ => (curr as char, false),
     }
 }
