@@ -1,5 +1,5 @@
 use crate::buffers::{OutBuffer, RawBuffer, new_out_buffer, new_raw_buffer};
-use crate::modes::{IS_TONE_KEY, InputMethod, Mode, mode_for};
+use crate::modes::{IS_TONE_KEY, IS_VOWEL, InputMethod, Mode, mode_for};
 use crate::tone::{is_vowel_unicode, map_vowel_with_tone};
 
 /// Bitmask lookup table for invalid Vietnamese consonant pairs.
@@ -84,7 +84,7 @@ impl UltraFastViEngine {
         let mut run_char: u8 = 0;
         let mut run_count: u8 = 0;
         // Flags for deferred bubbling (computed during this pass, zero extra cost)
-        let mut seen_mod: u8 = 0;   // bitmask: bit0=a, bit1=e, bit2=o, bit3=d
+        let mut seen_mod: u8 = 0;     // bitmask: bit0=a, bit1=e, bit2=o, bit3=d
         let mut need_mod_bubble = false;
         let mut has_w = false;
 
@@ -102,8 +102,7 @@ impl UltraFastViEngine {
                     continue;
                 }
 
-                // Rule 2: 'r' after 't' is 'tr'
-                // Extended: 'r' after 'p', 'f', 'c', 'b', 'd', 'g', 'k'
+                // Rule 2: 'r' after certain consonants forms a cluster (tr, pr, fr, cr, br, dr, gr, kr)
                 if b == b'r' {
                     let prev = bytes[idx - 1];
                     if matches!(prev, b't' | b'p' | b'f' | b'c' | b'b' | b'd' | b'g' | b'k') {
@@ -115,27 +114,43 @@ impl UltraFastViEngine {
                     }
                 }
 
-                // Double tone key cancellation: ss, ff, rr, xx, jj -> undo tone, put key back as literal
+                // Double tone key cancellation: ss, ff, rr, xx, jj -> undo tone, put key back
                 if b == last_tone_char {
-                    // Cancel the tone and re-insert the key as a literal
                     if t_len < 32 {
                         toggled[t_len] = b;
                         t_len += 1;
                     }
                     last_tone_char = 0;
                     tone_cancelled = true;
-                } else {
-                    // If tone was previously cancelled and we see a new tone key,
-                    // don't re-apply tone (the user already cancelled)
-                    if tone_cancelled {
-                        if t_len < 32 {
-                            toggled[t_len] = b;
-                            t_len += 1;
-                        }
-                    } else {
-                        last_tone_char = b;
+                    continue;
+                }
+
+                // If tone was previously cancelled, subsequent tone keys are literals
+                if tone_cancelled {
+                    if t_len < 32 {
+                        toggled[t_len] = b;
+                        t_len += 1;
+                    }
+                    continue;
+                }
+
+                // General rule: a tone key immediately followed by a vowel in the raw input
+                // is a consonant in the original word structure, not a tone marker.
+                // Vietnamese tone keys always appear at syllable end, never between vowels.
+                // e.g. "reset" → s between e's is a consonant, not tone sắc.
+                if idx + 1 < bytes.len() {
+                    let next_attr = self.mode.classify[bytes[idx + 1] as usize];
+                    if (next_attr & IS_VOWEL) != 0 {
+                        run_char = b;
+                        run_count = 1;
+                        toggled[t_len] = b;
+                        t_len += 1;
+                        continue;
                     }
                 }
+
+                // Strip tone key and record it
+                last_tone_char = b;
             } else {
                 // Fused toggling: detect triple-repeat (aaa->a, ddd->d, etc.)
                 if b == run_char {
@@ -149,12 +164,15 @@ impl UltraFastViEngine {
                     run_char = b;
                     run_count = 1;
                 }
-                // Track modifier/w flags for deferred bubbling (zero-cost: piggyback on this loop)
+                // Track modifier/w flags for deferred bubbling
+                // Only set need_mod_bubble for NON-ADJACENT duplicates (adjacent pairs
+                // like oo, ee, dd are already handled by the resolver)
+                let is_adjacent = b == run_char && run_count == 2;
                 match b {
-                    b'a' => { let bit = 1u8 << 0; if seen_mod & bit != 0 { need_mod_bubble = true; } seen_mod |= bit; }
-                    b'e' => { let bit = 1u8 << 1; if seen_mod & bit != 0 { need_mod_bubble = true; } seen_mod |= bit; }
-                    b'o' => { let bit = 1u8 << 2; if seen_mod & bit != 0 { need_mod_bubble = true; } seen_mod |= bit; }
-                    b'd' => { let bit = 1u8 << 3; if seen_mod & bit != 0 { need_mod_bubble = true; } seen_mod |= bit; }
+                    b'a' => { let bit = 1u8 << 0; if seen_mod & bit != 0 && !is_adjacent { need_mod_bubble = true; } seen_mod |= bit; }
+                    b'e' => { let bit = 1u8 << 1; if seen_mod & bit != 0 && !is_adjacent { need_mod_bubble = true; } seen_mod |= bit; }
+                    b'o' => { let bit = 1u8 << 2; if seen_mod & bit != 0 && !is_adjacent { need_mod_bubble = true; } seen_mod |= bit; }
+                    b'd' => { let bit = 1u8 << 3; if seen_mod & bit != 0 && !is_adjacent { need_mod_bubble = true; } seen_mod |= bit; }
                     b'w' => { has_w = true; }
                     _ => {}
                 }
@@ -164,8 +182,9 @@ impl UltraFastViEngine {
         }
 
         // Fused modifier + w bubbling pass (single buffer copy)
-        // Handles: free-style modifier bubbling (aa/ee/oo/dd), double-w cancellation, w-bubbling
-        // Flags need_mod_bubble / has_w were computed in the first pass above (zero extra scan)
+        // Always bubble when non-adjacent duplicate modifiers found.
+        // Validation catches invalid results (e.g. "electronic" → êlctronic → rejected).
+        // The tone-between-vowels rule prevents false adjacency (e.g. "reset" → s stays literal).
         const W_LITERAL: u8 = 0x01;
         let need_w_pass = has_w && self.mode.enable_w_bubbling;
         {
@@ -174,7 +193,7 @@ impl UltraFastViEngine {
                 let mut b_len = 0usize;
 
                 // Phase 1: modifier bubbling + double-w collapse in one scan
-                let mut last_pos: [u8; 4] = [0xFF; 4]; // a,e,o,d positions (0xFF = none)
+                let mut last_pos: [u8; 4] = [0xFF; 4]; // a,e,o,d buf positions (0xFF = none)
                 let mut wi = 0usize;
                 while wi < t_len {
                     let c = toggled[wi];
@@ -187,7 +206,6 @@ impl UltraFastViEngine {
                             wi += 2;
                             continue;
                         }
-                        // Single w: just append, will be bubbled in phase 2
                         buf[b_len] = c;
                         b_len += 1;
                         wi += 1;
@@ -211,7 +229,6 @@ impl UltraFastViEngine {
                             buf[insert_at] = c;
                             b_len += 1;
                             last_pos[s] = 0xFF; // consumed
-                            // Shift tracked positions
                             for p in last_pos.iter_mut() {
                                 if *p != 0xFF && *p as usize >= insert_at {
                                     *p += 1;
@@ -359,6 +376,9 @@ impl UltraFastViEngine {
             return chars.len() > 1;
         }
 
+        let len = chars.len();
+
+        // Check "ou" adjacency
         let mut mask_o: u32 = 0;
         let mut mask_u: u32 = 0;
         let mut idx: u32 = 0;
@@ -373,31 +393,70 @@ impl UltraFastViEngine {
             }
             idx += 1;
         }
-
         if (mask_o & (mask_u >> 1)) != 0 {
             return true;
         }
 
+        // Check leading consonant cluster (onset)
         let first_vowel_pos = vowel_mask.trailing_zeros() as usize;
 
         if first_vowel_pos >= 3 {
             if first_vowel_pos == 3 {
-                if chars.len() >= 3 && chars[0] == 'n' && chars[1] == 'g' && chars[2] == 'h' {
-                    return false;
+                if len >= 3 && chars[0] == 'n' && chars[1] == 'g' && chars[2] == 'h' {
+                    // ngh- is valid
+                } else {
+                    return true;
                 }
+            } else {
+                return true;
             }
-            return true;
         }
 
         if first_vowel_pos == 2 {
             let c1 = chars[0] as u32;
             let c2 = chars[1] as u32;
-            // Both chars must be lowercase ASCII a-z for table lookup
             if c1 >= b'a' as u32 && c1 <= b'z' as u32 && c2 >= b'a' as u32 && c2 <= b'z' as u32 {
                 let table_idx = (c1 - b'a' as u32) as usize * 26 + (c2 - b'a' as u32) as usize;
                 if INVALID_PAIR_TABLE[table_idx] {
                     return true;
                 }
+            }
+        }
+
+        // Check mid-word consonant clusters: between any two vowels, at most 2
+        // consecutive consonants are allowed (coda of prev syllable + onset of next).
+        // e.g. "êlctronic" has 4 consonants between ê and o → invalid.
+        {
+            let mut consec_consonants = 0u8;
+            let mut seen_vowel = false;
+            for i in 0..len {
+                let is_v = (vowel_mask >> i) & 1 == 1;
+                if is_v {
+                    consec_consonants = 0;
+                    seen_vowel = true;
+                } else if seen_vowel {
+                    consec_consonants += 1;
+                    if consec_consonants > 2 {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Check trailing consonant cluster (coda)
+        // Vietnamese allows at most: c, ch, m, n, ng, nh, p, t after the vowel cluster
+        let last_vowel_pos = 15 - (vowel_mask.reverse_bits().trailing_zeros() as usize);
+        let trailing_len = len - 1 - last_vowel_pos;
+
+        if trailing_len == 2 {
+            let c1 = chars[last_vowel_pos + 1];
+            let c2 = chars[last_vowel_pos + 2];
+            // Valid 2-char codas: ch, ng, nh
+            if !((c1 == 'c' && c2 == 'h')
+                || (c1 == 'n' && c2 == 'g')
+                || (c1 == 'n' && c2 == 'h'))
+            {
+                return true;
             }
         }
 

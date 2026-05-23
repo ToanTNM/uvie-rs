@@ -413,9 +413,9 @@ fn edge_double_tone_various_positions() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "bass"), "bas");
 
-    // Double tone in middle then more chars
+    // Double tone in middle then more chars — resolved form has invalid coda, falls back to raw
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "tesstt"), "testt");
+    assert_eq!(type_seq(&mut e, "tesstt"), "tesstt");
 
     // zz should also cancel
     let mut e = UltraFastViEngine::new();
@@ -560,10 +560,48 @@ fn free_style_modifier_bubbling() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "moiws"), "mới");
 
-    // dd modifier with consonant in between is NOT expected (dd must be adjacent)
-    // dnd -> just dnd (d is first char = consonant, n, d = second d but first d is at pos 0)
+    // dd modifier across consonants: bubbles to đan (valid Vietnamese)
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "dand"), "đan");
+}
+
+#[test]
+fn no_bubble_across_consonants() {
+    // reset: e..e separated by consonant 's' -> no bubble, stays "reset"
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "reset"), "reset");
+
+    // electronic: e..e separated by consonant 'l' -> no bubble
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "electronic"), "electronic");
+
+    // depend: e..e separated by consonant 'p' -> no bubble
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "depend"), "depend");
+
+    // added: dd is adjacent -> đ in Telex (correct behavior, use ddd to get literal dd)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "added"), "ađed");
+
+    // banana: a..a bubbles, result bânna is structurally valid Vietnamese
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "banana"), "bânna");
+
+    // resset: double-s cancels tone, then Rule 3 keeps second s as literal -> "reset"
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "resset"), "reset");
+
+    // Free-style still works when only vowels/w separate: neues -> nếu
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "neues"), "nếu");
+
+    // Free-style across consonants with tone key: memef -> mềm
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "memef"), "mềm");
+
+    // Free-style across consonants without tone: nene -> nên
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "nene"), "nên");
 }
 
 #[test]
