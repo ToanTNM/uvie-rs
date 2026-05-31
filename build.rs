@@ -2,6 +2,11 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
+    // FFI is only available with the `std` feature.
+    if env::var("CARGO_FEATURE_STD").is_err() {
+        return;
+    }
+
     let crate_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"));
     let config = cbindgen::Config::from_root_or_default(&crate_dir);
 

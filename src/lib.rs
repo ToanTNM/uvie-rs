@@ -8,6 +8,7 @@ pub mod tone;
 #[cfg(test)]
 mod tests;
 
+#[cfg(feature = "std")]
 pub mod ffi;
 
 pub use crate::engine::UltraFastViEngine;
