@@ -1,11 +1,20 @@
 use crate::{InputMethod, UltraFastViEngine};
 
+/// Simulates IME typing: whitespace commits the current composing word,
+/// and the final result includes committed text + any remaining composing text.
 fn type_seq(engine: &mut UltraFastViEngine, seq: &str) -> String {
-    let mut out = String::new();
+    let mut result = String::new();
     for c in seq.chars() {
-        out = engine.feed(c).to_string();
+        if c.is_whitespace() {
+            result.push_str(engine.current_composing());
+            engine.commit();
+            result.push(c);
+        } else {
+            engine.feed(c);
+        }
     }
-    out
+    result.push_str(engine.current_composing());
+    result
 }
 
 fn type_seq_vni(seq: &str) -> String {
@@ -148,10 +157,14 @@ fn tone_placement_three_vowels_targets_second_vowel() {
 }
 
 #[test]
-fn whitespace_flushes_and_resets_buffer() {
+fn whitespace_commits_and_resets_composing() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "aas"), "ấ");
-    assert_eq!(e.feed(' '), "ấ ");
+    // Space commits the composing word; feed returns empty composing text.
+    assert_eq!(e.feed(' '), "");
+    assert_eq!(e.committed_text(), "ấ ");
+    assert_eq!(e.current_composing(), "");
+    // New word starts with a fresh composing buffer.
     assert_eq!(type_seq(&mut e, "as"), "á");
 }
 
@@ -480,7 +493,9 @@ fn edge_modified_vowel_tone_placement() {
 fn edge_consecutive_words_via_space() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "vieetj"), "việt");
-    assert_eq!(e.feed(' '), "việt ");
+    e.feed(' ');
+    assert_eq!(e.current_composing(), "");
+    assert_eq!(e.committed_text(), "việt ");
     assert_eq!(type_seq(&mut e, "namm"), "namm");
 }
 

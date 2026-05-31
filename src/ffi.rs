@@ -147,6 +147,16 @@ pub extern "C" fn uvie_engine_clear(engine: *mut UvieEngine) {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_commit(engine: *mut UvieEngine) {
+    let _ = std::panic::catch_unwind(|| {
+        clear_pending(engine);
+        if let Some(mut e) = lock_engine(engine) {
+            e.commit();
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn uvie_engine_set_input_method(engine: *mut UvieEngine, method: c_int) {
     let _ = std::panic::catch_unwind(|| {
         clear_pending(engine);
@@ -193,6 +203,17 @@ pub extern "C" fn uvie_engine_backspace(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_is_composing(engine: *const UvieEngine) -> c_int {
+    std::panic::catch_unwind(|| {
+        let Some(e) = lock_engine_const(engine) else {
+            return 0;
+        };
+        if e.is_composing() { 1 } else { 0 }
+    })
+    .unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn uvie_engine_is_empty(engine: *const UvieEngine) -> c_int {
     std::panic::catch_unwind(|| {
         let Some(e) = lock_engine_const(engine) else {
@@ -213,7 +234,39 @@ pub extern "C" fn uvie_engine_current_output(
         let Some(e) = lock_engine_const(engine) else {
             return 0;
         };
-        let result = e.current_output().to_string();
+        let result = e.current_output();
+        write_output(&result, out_buf, out_len)
+    })
+    .unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_current_composing(
+    engine: *const UvieEngine,
+    out_buf: *mut c_char,
+    out_len: usize,
+) -> usize {
+    std::panic::catch_unwind(|| {
+        let Some(e) = lock_engine_const(engine) else {
+            return 0;
+        };
+        let result = e.current_composing().to_string();
+        write_output(&result, out_buf, out_len)
+    })
+    .unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_committed_text(
+    engine: *const UvieEngine,
+    out_buf: *mut c_char,
+    out_len: usize,
+) -> usize {
+    std::panic::catch_unwind(|| {
+        let Some(e) = lock_engine_const(engine) else {
+            return 0;
+        };
+        let result = e.committed_text().to_string();
         write_output(&result, out_buf, out_len)
     })
     .unwrap_or(0)
@@ -240,7 +293,7 @@ pub extern "C" fn uvie_engine_feed_utf8(
         let result = if let Some(c) = decoded {
             e.feed(c)
         } else {
-            e.current_output()
+            e.current_composing()
         }
         .to_string();
 

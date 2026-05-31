@@ -22,15 +22,23 @@ void uvie_engine_free(UvieEngine *engine);
 
 void uvie_engine_clear(UvieEngine *engine);
 
+void uvie_engine_commit(UvieEngine *engine);
+
 void uvie_engine_set_input_method(UvieEngine *engine, int method);
 
 int uvie_engine_get_input_method(const UvieEngine *engine);
 
 size_t uvie_engine_backspace(UvieEngine *engine, char *out_buf, size_t out_len);
 
+int uvie_engine_is_composing(const UvieEngine *engine);
+
 int uvie_engine_is_empty(const UvieEngine *engine);
 
 size_t uvie_engine_current_output(const UvieEngine *engine, char *out_buf, size_t out_len);
+
+size_t uvie_engine_current_composing(const UvieEngine *engine, char *out_buf, size_t out_len);
+
+size_t uvie_engine_committed_text(const UvieEngine *engine, char *out_buf, size_t out_len);
 
 size_t uvie_engine_feed_utf8(UvieEngine *engine, uint8_t ch, char *out_buf, size_t out_len);
 

@@ -26,6 +26,7 @@ static INVALID_PAIR_TABLE: [bool; 676] = {
 pub struct UltraFastViEngine {
     raw_buffer: RawBuffer,
     out_buffer: OutBuffer,
+    committed: OutBuffer,
     input_method: InputMethod,
     mode: &'static Mode,
 }
@@ -36,12 +37,22 @@ impl UltraFastViEngine {
         Self {
             raw_buffer: new_raw_buffer(),
             out_buffer: new_out_buffer(),
+            committed: new_out_buffer(),
             input_method,
             mode: mode_for(input_method),
         }
     }
 
     pub fn clear(&mut self) {
+        self.raw_buffer.clear();
+        self.out_buffer.clear();
+        self.committed.clear();
+    }
+
+    /// Finalizes the current composing text into the committed buffer,
+    /// then clears the composing state.
+    pub fn commit(&mut self) {
+        let _ = self.committed.push_str(&self.out_buffer);
         self.raw_buffer.clear();
         self.out_buffer.clear();
     }
@@ -56,23 +67,52 @@ impl UltraFastViEngine {
     }
 
     pub fn backspace(&mut self) -> &str {
-        self.raw_buffer.pop();
-        self.render_str()
+        if !self.raw_buffer.is_empty() {
+            self.raw_buffer.pop();
+            return self.render_str();
+        }
+        if !self.committed.is_empty() {
+            self.committed.pop();
+        }
+        self.out_buffer.clear();
+        &self.out_buffer
     }
 
     pub fn is_empty(&self) -> bool {
-        self.raw_buffer.is_empty()
+        self.raw_buffer.is_empty() && self.committed.is_empty()
     }
 
-    pub fn current_output(&self) -> &str {
+    /// Returns true when there is an active word being composed.
+    pub fn is_composing(&self) -> bool {
+        !self.raw_buffer.is_empty()
+    }
+
+    /// Returns only the current composing text (the word being typed).
+    pub fn current_composing(&self) -> &str {
         &self.out_buffer
+    }
+
+    /// Returns all text that has already been committed.
+    pub fn committed_text(&self) -> &str {
+        &self.committed
+    }
+
+    /// Returns the full text: committed + current composing.
+    #[cfg(feature = "std")]
+    pub fn current_output(&self) -> String {
+        let mut result = String::with_capacity(self.committed.len() + self.out_buffer.len());
+        result.push_str(&self.committed);
+        result.push_str(&self.out_buffer);
+        result
     }
 
     pub fn feed(&mut self, key: char) -> &str {
         if key.is_whitespace() {
             self.render_str();
+            let _ = self.committed.push_str(&self.out_buffer);
             self.raw_buffer.clear();
-            let _ = self.out_buffer.push(key);
+            self.out_buffer.clear();
+            let _ = self.committed.push(key);
             return &self.out_buffer;
         }
         let _ = self.raw_buffer.push(key.to_ascii_lowercase());
@@ -87,7 +127,7 @@ impl UltraFastViEngine {
         }
 
         let bytes_all = self.raw_buffer.as_bytes();
-        let len = bytes_all.len().min(32);
+        let len = bytes_all.len();
 
         // Filter tone + Toggling in one pass.
         // Table lookups use get_unchecked (index is u8, tables are [u8; 256]).
