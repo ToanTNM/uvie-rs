@@ -403,7 +403,7 @@ impl UltraFastViEngine {
         }
 
         // Validation
-        if self.is_invalid_vietnamese_chars(&char_buf[..c_len], vowel_mask) {
+        if self.is_invalid_vietnamese_chars(&char_buf[..c_len], vowel_mask, tone_cancelled) {
             self.out_buffer.clear();
             let _ = self.out_buffer.push_str(&self.raw_buffer);
             return &self.out_buffer;
@@ -423,9 +423,10 @@ impl UltraFastViEngine {
         &self.out_buffer
     }
 
-    fn is_invalid_vietnamese_chars(&self, chars: &[char], vowel_mask: u16) -> bool {
+    fn is_invalid_vietnamese_chars(&self, chars: &[char], vowel_mask: u16, tone_cancelled: bool) -> bool {
         if vowel_mask == 0 {
-            return chars.len() > 1;
+            let has_non_ascii = chars.iter().any(|&c| !c.is_ascii());
+            return chars.len() > 1 && !has_non_ascii;
         }
 
         let len = chars.len();
@@ -475,6 +476,10 @@ impl UltraFastViEngine {
                     return true;
                 }
             }
+        }
+
+        if tone_cancelled {
+            return false;
         }
 
         // Check mid-word consonant clusters: between any two vowels, at most 2

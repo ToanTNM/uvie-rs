@@ -426,9 +426,9 @@ fn edge_double_tone_various_positions() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "bass"), "bas");
 
-    // Double tone in middle then more chars — resolved form has invalid coda, falls back to raw
+    // Double tone in middle then more chars — cancelled tone key becomes literal, extra chars accepted
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "tesstt"), "tesstt");
+    assert_eq!(type_seq(&mut e, "tesstt"), "testt");
 
     // zz should also cancel
     let mut e = UltraFastViEngine::new();
