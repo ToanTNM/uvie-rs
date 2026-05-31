@@ -8,5 +8,7 @@ pub mod tone;
 #[cfg(test)]
 mod tests;
 
+pub mod ffi;
+
 pub use crate::engine::UltraFastViEngine;
 pub use crate::modes::{InputMethod, ModeTrait, TelexMode, VniMode};

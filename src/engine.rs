@@ -55,6 +55,19 @@ impl UltraFastViEngine {
         self.input_method
     }
 
+    pub fn backspace(&mut self) -> &str {
+        self.raw_buffer.pop();
+        self.render_str()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.raw_buffer.is_empty()
+    }
+
+    pub fn current_output(&self) -> &str {
+        &self.out_buffer
+    }
+
     pub fn feed(&mut self, key: char) -> &str {
         if key.is_whitespace() {
             self.render_str();

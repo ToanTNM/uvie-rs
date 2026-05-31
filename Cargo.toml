@@ -14,6 +14,9 @@ exclude = ["target/", "docs/"]
 [dependencies]
 heapless = { version = "0.8", optional = true }
 
+[build-dependencies]
+cbindgen = "0.29"
+
 [dev-dependencies]
 criterion = "0.5"
 vi = "0.8"
@@ -22,6 +25,9 @@ vi = "0.8"
 default = ["std"]
 std = []
 heapless = ["dep:heapless"]
+
+[lib]
+crate-type = ["rlib", "cdylib", "staticlib"]
 
 [[bin]]
 name = "uvie"
