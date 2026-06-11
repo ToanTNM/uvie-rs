@@ -28,6 +28,12 @@ void uvie_engine_set_input_method(UvieEngine *engine, int method);
 
 int uvie_engine_get_input_method(const UvieEngine *engine);
 
+void uvie_engine_set_quick_start(UvieEngine *engine, int enabled);
+
+void uvie_engine_set_quick_telex(UvieEngine *engine, int enabled);
+
+void uvie_engine_set_modern_orthography(UvieEngine *engine, int enabled);
+
 size_t uvie_engine_backspace(UvieEngine *engine, char *out_buf, size_t out_len);
 
 int uvie_engine_is_composing(const UvieEngine *engine);

@@ -1,27 +1,7 @@
 use crate::buffers::{OutBuffer, RawBuffer, new_out_buffer, new_raw_buffer};
 use crate::modes::{IS_TONE_KEY, IS_VOWEL, InputMethod, Mode, ModeTrait, ResolverKind, mode_for, TelexMode, VniMode};
+use crate::phonetics;
 use crate::tone::{is_vowel_unicode, map_vowel_with_tone};
-
-/// Bitmask lookup table for invalid Vietnamese consonant pairs.
-/// Index = (c1 - b'a') * 26 + (c2 - b'a'), value = true if pair is invalid.
-static INVALID_PAIR_TABLE: [bool; 676] = {
-    let mut t = [false; 676];
-    // Helper: encode pair as index
-    macro_rules! mark {
-        ($a:expr, $b:expr) => {
-            t[($a - b'a') as usize * 26 + ($b - b'a') as usize] = true;
-        };
-    }
-    mark!(b'c', b'l'); mark!(b'f', b'l'); mark!(b'b', b'l'); mark!(b'g', b'l');
-    mark!(b's', b'l'); mark!(b'p', b'l');
-    mark!(b'b', b'r'); mark!(b'p', b'r'); mark!(b'd', b'r'); mark!(b'f', b'r');
-    mark!(b'g', b'r'); mark!(b'k', b'r');
-    mark!(b's', b't'); mark!(b's', b'p'); mark!(b's', b'k');
-    mark!(b'p', b't'); mark!(b'p', b'c'); mark!(b'p', b'g'); mark!(b'p', b'q');
-    mark!(b'p', b's'); mark!(b'p', b'k'); mark!(b'p', b'd'); mark!(b'p', b'f');
-    mark!(b'p', b'b');
-    t
-};
 
 pub struct UltraFastViEngine {
     raw_buffer: RawBuffer,
@@ -29,6 +9,9 @@ pub struct UltraFastViEngine {
     committed: OutBuffer,
     input_method: InputMethod,
     mode: &'static Mode,
+    enable_quick_start: bool,
+    enable_quick_telex: bool,
+    enable_modern_orthography: bool,
 }
 
 impl UltraFastViEngine {
@@ -40,7 +23,34 @@ impl UltraFastViEngine {
             committed: new_out_buffer(),
             input_method,
             mode: mode_for(input_method),
+            enable_quick_start: false,
+            enable_quick_telex: false,
+            enable_modern_orthography: false,
         }
+    }
+
+    pub fn set_quick_start(&mut self, enabled: bool) {
+        self.enable_quick_start = enabled;
+    }
+
+    pub fn quick_start(&self) -> bool {
+        self.enable_quick_start
+    }
+
+    pub fn set_quick_telex(&mut self, enabled: bool) {
+        self.enable_quick_telex = enabled;
+    }
+
+    pub fn quick_telex(&self) -> bool {
+        self.enable_quick_telex
+    }
+
+    pub fn set_modern_orthography(&mut self, enabled: bool) {
+        self.enable_modern_orthography = enabled;
+    }
+
+    pub fn modern_orthography(&self) -> bool {
+        self.enable_modern_orthography
     }
 
     pub fn clear(&mut self) {
@@ -115,7 +125,40 @@ impl UltraFastViEngine {
             let _ = self.committed.push(key);
             return &self.out_buffer;
         }
-        let _ = self.raw_buffer.push(key.to_ascii_lowercase());
+        let lower = key.to_ascii_lowercase();
+        if self.enable_quick_start {
+            match lower {
+                'j' => { let _ = self.raw_buffer.push('g'); let _ = self.raw_buffer.push('i'); }
+                'f' => { let _ = self.raw_buffer.push('p'); let _ = self.raw_buffer.push('h'); }
+                'w' => { let _ = self.raw_buffer.push('q'); let _ = self.raw_buffer.push('u'); }
+                _ => { let _ = self.raw_buffer.push(lower); }
+            }
+        } else if self.enable_quick_telex {
+            let expanded = match lower {
+                'c' => Some(['c', 'h']),
+                'g' => Some(['g', 'i']),
+                'k' => Some(['k', 'h']),
+                'n' => Some(['n', 'g']),
+                'q' => Some(['q', 'u']),
+                'p' => Some(['p', 'h']),
+                't' => Some(['t', 'h']),
+                _ => None,
+            };
+            if let Some(pair) = expanded {
+                let bytes = self.raw_buffer.as_bytes();
+                if !bytes.is_empty() && bytes[bytes.len() - 1] == lower as u8 {
+                    self.raw_buffer.pop();
+                    let _ = self.raw_buffer.push(pair[0]);
+                    let _ = self.raw_buffer.push(pair[1]);
+                } else {
+                    let _ = self.raw_buffer.push(lower);
+                }
+            } else {
+                let _ = self.raw_buffer.push(lower);
+            }
+        } else {
+            let _ = self.raw_buffer.push(lower);
+        }
         self.render_str()
     }
 
@@ -409,9 +452,15 @@ impl UltraFastViEngine {
             return &self.out_buffer;
         }
 
-        // Tone Placement
-        if last_tone_char > 0 {
+        // Tone restriction: ch/t coda cannot have hoi (3) or nga (4)
+        if last_tone_char > 0 && vowel_mask != 0 {
             let tone_id = unsafe { *self.mode.tone.get_unchecked(last_tone_char as usize) };
+            let last_vowel_pos = 15 - (vowel_mask.reverse_bits().trailing_zeros() as usize);
+            if phonetics::is_tone_restricted(&char_buf[..c_len], last_vowel_pos, tone_id) {
+                self.out_buffer.clear();
+                let _ = self.out_buffer.push_str(&self.raw_buffer);
+                return &self.out_buffer;
+            }
             self.apply_tone_in_place(&mut char_buf[..c_len], vowel_mask, tone_id);
         }
 
@@ -426,7 +475,9 @@ impl UltraFastViEngine {
     fn is_invalid_vietnamese_chars(&self, chars: &[char], vowel_mask: u16, tone_cancelled: bool) -> bool {
         if vowel_mask == 0 {
             let has_non_ascii = chars.iter().any(|&c| !c.is_ascii());
-            return chars.len() > 1 && !has_non_ascii;
+            // Allow up to 3 consonants without a vowel — user may still be typing
+            // (max Vietnamese onset length is 3: "ngh").
+            return chars.len() > 3 && !has_non_ascii;
         }
 
         let len = chars.len();
@@ -452,31 +503,11 @@ impl UltraFastViEngine {
 
         // Check leading consonant cluster (onset)
         let first_vowel_pos = vowel_mask.trailing_zeros() as usize;
-
-        if first_vowel_pos >= 3 {
-            if first_vowel_pos == 3 {
-                if len >= 3 && chars[0] == 'n' && chars[1] == 'g' && chars[2] == 'h' {
-                    // ngh- is valid
-                } else {
-                    return true;
-                }
-            } else {
-                return true;
-            }
+        if !phonetics::is_valid_onset(chars, first_vowel_pos) {
+            return true;
         }
 
-        if first_vowel_pos == 2 {
-            let c1 = chars[0];
-            let c2 = chars[1];
-            if c1.is_ascii_lowercase() && c2.is_ascii_lowercase() {
-                let b1 = c1 as u32 - b'a' as u32;
-                let b2 = c2 as u32 - b'a' as u32;
-                let table_idx = b1 as usize * 26 + b2 as usize;
-                if INVALID_PAIR_TABLE[table_idx] {
-                    return true;
-                }
-            }
-        }
+        let last_vowel_pos = 15 - (vowel_mask.reverse_bits().trailing_zeros() as usize);
 
         if tone_cancelled {
             return false;
@@ -484,7 +515,6 @@ impl UltraFastViEngine {
 
         // Check mid-word consonant clusters: between any two vowels, at most 2
         // consecutive consonants are allowed (coda of prev syllable + onset of next).
-        // e.g. "êlctronic" has 4 consonants between ê and o → invalid.
         {
             let mut consec_consonants = 0u8;
             let mut seen_vowel = false;
@@ -503,20 +533,8 @@ impl UltraFastViEngine {
         }
 
         // Check trailing consonant cluster (coda)
-        // Vietnamese allows at most: c, ch, m, n, ng, nh, p, t after the vowel cluster
-        let last_vowel_pos = 15 - (vowel_mask.reverse_bits().trailing_zeros() as usize);
-        let trailing_len = len - 1 - last_vowel_pos;
-
-        if trailing_len == 2 {
-            let c1 = chars[last_vowel_pos + 1];
-            let c2 = chars[last_vowel_pos + 2];
-            // Valid 2-char codas: ch, ng, nh
-            if !((c1 == 'c' && c2 == 'h')
-                || (c1 == 'n' && c2 == 'g')
-                || (c1 == 'n' && c2 == 'h'))
-            {
-                return true;
-            }
+        if phonetics::is_invalid_coda(chars, last_vowel_pos) {
+            return true;
         }
 
         false

@@ -3,6 +3,7 @@
 pub mod buffers;
 pub mod engine;
 pub mod modes;
+pub mod phonetics;
 pub mod tone;
 
 #[cfg(test)]

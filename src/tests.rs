@@ -641,3 +641,189 @@ fn free_style_does_not_break_normal() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "eee"), "e");
 }
+
+#[test]
+fn invalid_onset_pair_fallback() {
+    // tl is not a valid Vietnamese onset -> fallback to raw
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "tl"), "tl");
+
+    // bh is not valid -> fallback
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "bh"), "bh");
+
+    // lr is not valid -> fallback
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "lr"), "lr");
+}
+
+#[test]
+fn valid_onset_pairs() {
+    // tr is valid
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "tras"), "trá");
+
+    // ph is valid
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "phas"), "phá");
+
+    // kh is valid
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "khas"), "khá");
+
+    // ngh is valid
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "nghes"), "nghé");
+}
+
+#[test]
+fn tone_restriction_ch_t_coda() {
+    // ch + sac (1) is valid
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "achs"), "ách");
+
+    // ch + hoi (3) is invalid -> fallback raw
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "achr"), "achr");
+
+    // ch + nga (4) is invalid -> fallback raw
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "achx"), "achx");
+
+    // t + sac is valid
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ats"), "át");
+
+    // t + hoi is invalid -> fallback raw
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "atr"), "atr");
+}
+
+#[test]
+fn quick_start_consonants() {
+    let mut e = UltraFastViEngine::new();
+    e.set_quick_start(true);
+    assert_eq!(type_seq(&mut e, "jang"), "giang");
+
+    let mut e = UltraFastViEngine::new();
+    e.set_quick_start(true);
+    assert_eq!(type_seq(&mut e, "phanhs"), "phánh");
+
+    let mut e = UltraFastViEngine::new();
+    e.set_quick_start(true);
+    assert_eq!(type_seq(&mut e, "wen"), "quen");
+}
+
+#[test]
+fn quick_start_disabled_by_default() {
+    let mut e = UltraFastViEngine::new();
+    // j should remain literal when quick_start is off
+    assert_eq!(type_seq(&mut e, "jang"), "jang");
+}
+
+#[test]
+fn quick_telex_cc() {
+    let mut e = UltraFastViEngine::new();
+    e.set_quick_telex(true);
+    assert_eq!(type_seq(&mut e, "cc"), "ch");
+}
+
+#[test]
+fn quick_telex_gg() {
+    let mut e = UltraFastViEngine::new();
+    e.set_quick_telex(true);
+    assert_eq!(type_seq(&mut e, "gg"), "gi");
+}
+
+#[test]
+fn quick_telex_kk() {
+    let mut e = UltraFastViEngine::new();
+    e.set_quick_telex(true);
+    assert_eq!(type_seq(&mut e, "kk"), "kh");
+}
+
+#[test]
+fn quick_telex_nn() {
+    let mut e = UltraFastViEngine::new();
+    e.set_quick_telex(true);
+    assert_eq!(type_seq(&mut e, "nn"), "ng");
+}
+
+#[test]
+fn quick_telex_qq() {
+    let mut e = UltraFastViEngine::new();
+    e.set_quick_telex(true);
+    assert_eq!(type_seq(&mut e, "qq"), "qu");
+}
+
+#[test]
+fn quick_telex_pp() {
+    let mut e = UltraFastViEngine::new();
+    e.set_quick_telex(true);
+    assert_eq!(type_seq(&mut e, "pp"), "ph");
+}
+
+#[test]
+fn quick_telex_tt() {
+    let mut e = UltraFastViEngine::new();
+    e.set_quick_telex(true);
+    assert_eq!(type_seq(&mut e, "tt"), "th");
+}
+
+#[test]
+fn quick_telex_with_tone() {
+    let mut e = UltraFastViEngine::new();
+    e.set_quick_telex(true);
+    // ccas -> ch + a + s (tone sac) -> chá
+    assert_eq!(type_seq(&mut e, "ccas"), "chá");
+}
+
+#[test]
+fn quick_telex_disabled_by_default() {
+    let mut e = UltraFastViEngine::new();
+    // cc should stay cc when quick_telex is off
+    assert_eq!(type_seq(&mut e, "cc"), "cc");
+}
+
+#[test]
+fn modern_orthography_hoas() {
+    // hoas -> hoá (tone on 'a' — uvie-rs default is already modern orthography)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "hoas"), "hoá");
+}
+
+#[test]
+fn modern_orthography_thuys() {
+    // thuys -> thuý (tone on 'y' — uvie-rs default is already modern orthography)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "thuys"), "thuý");
+}
+
+#[test]
+fn modern_orthography_oa_with_coda() {
+    // hoacs -> hoác (tone on 'a' even with coda)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "hoacs"), "hoác");
+}
+
+#[test]
+fn modern_orthography_oe_pair() {
+    // khoes -> khoé (tone on 'e')
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "khoes"), "khoé");
+}
+
+#[test]
+fn modern_orthography_quy_prefix() {
+    // qu + uy -> quý (qu prefix, tone on 'y')
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "quys"), "quý");
+}
+
+#[test]
+fn quick_telex_english_words_passthrough() {
+    let mut e = UltraFastViEngine::new();
+    e.set_quick_telex(true);
+    // "account" has 'cc' which gets expanded to 'ch' when quick telex is on
+    assert_eq!(type_seq(&mut e, "account"), "achount");
+}

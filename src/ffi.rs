@@ -186,6 +186,33 @@ pub extern "C" fn uvie_engine_get_input_method(engine: *const UvieEngine) -> c_i
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_set_quick_start(engine: *mut UvieEngine, enabled: c_int) {
+    let _ = std::panic::catch_unwind(|| {
+        if let Some(mut e) = lock_engine(engine) {
+            e.set_quick_start(enabled != 0);
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_set_quick_telex(engine: *mut UvieEngine, enabled: c_int) {
+    let _ = std::panic::catch_unwind(|| {
+        if let Some(mut e) = lock_engine(engine) {
+            e.set_quick_telex(enabled != 0);
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_set_modern_orthography(engine: *mut UvieEngine, enabled: c_int) {
+    let _ = std::panic::catch_unwind(|| {
+        if let Some(mut e) = lock_engine(engine) {
+            e.set_modern_orthography(enabled != 0);
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn uvie_engine_backspace(
     engine: *mut UvieEngine,
     out_buf: *mut c_char,
