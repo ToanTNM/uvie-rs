@@ -12,6 +12,8 @@
  */
 typedef struct UvieEngine UvieEngine;
 
+typedef struct UvieReplayEngine UvieReplayEngine;
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -47,6 +49,41 @@ size_t uvie_engine_current_composing(const UvieEngine *engine, char *out_buf, si
 size_t uvie_engine_committed_text(const UvieEngine *engine, char *out_buf, size_t out_len);
 
 size_t uvie_engine_feed_utf8(UvieEngine *engine, uint8_t ch, char *out_buf, size_t out_len);
+
+UvieReplayEngine *uvie_replay_new(void);
+
+void uvie_replay_free(UvieReplayEngine *engine);
+
+void uvie_replay_set_input_method(UvieReplayEngine *engine, int method);
+
+void uvie_replay_set_quick_start(UvieReplayEngine *engine, int enabled);
+
+void uvie_replay_set_quick_telex(UvieReplayEngine *engine, int enabled);
+
+void uvie_replay_set_modern_orthography(UvieReplayEngine *engine, int enabled);
+
+/**
+ * Feed a single UTF-8 character.
+ * Returns the number of backspaces the caller must send,
+ * and writes the new output string into `out_buf`.
+ */
+size_t uvie_replay_feed(UvieReplayEngine *engine, char ch, char *out_buf, size_t out_len);
+
+/**
+ * Handle backspace.
+ * Returns backspace count, writes new output into `out_buf`.
+ */
+size_t uvie_replay_backspace(UvieReplayEngine *engine, char *out_buf, size_t out_len);
+
+/**
+ * Commit the current word (call on space / punctuation).
+ * Returns backspace count (usually 0), clears output buffer.
+ */
+size_t uvie_replay_commit(UvieReplayEngine *engine, char *out_buf, size_t out_len);
+
+void uvie_replay_reset(UvieReplayEngine *engine);
+
+int uvie_replay_is_composing(const UvieReplayEngine *engine);
 
 #ifdef __cplusplus
 }  // extern "C"

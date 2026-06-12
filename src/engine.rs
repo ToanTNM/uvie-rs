@@ -509,6 +509,25 @@ impl UltraFastViEngine {
 
         let last_vowel_pos = 15 - (vowel_mask.reverse_bits().trailing_zeros() as usize);
 
+        // Reject words starting with a vowel whose first coda is invalid.
+        // e.g. "êngin" → êng is not a valid Vietnamese syllable.
+        if first_vowel_pos == 0 {
+            let v = chars[0];
+            let mut next_vowel_pos = len;
+            for i in 1..len {
+                if (vowel_mask >> i) & 1 == 1 {
+                    next_vowel_pos = i;
+                    break;
+                }
+            }
+            let coda_len = next_vowel_pos.saturating_sub(1);
+            if coda_len == 2 && chars[1] == 'n' && chars[2] == 'g' {
+                if matches!(v, 'ê' | 'ơ' | 'i' | 'y') {
+                    return true;
+                }
+            }
+        }
+
         if tone_cancelled {
             return false;
         }

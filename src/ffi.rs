@@ -4,6 +4,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use crate::engine::UltraFastViEngine;
 use crate::modes::InputMethod;
+use crate::replay::ReplayEngine;
 
 /// Opaque handle to the engine. C code only ever holds a pointer to this type;
 /// the fields are intentionally not part of the C ABI.
@@ -325,6 +326,177 @@ pub extern "C" fn uvie_engine_feed_utf8(
         .to_string();
 
         write_output(&result, out_buf, out_len)
+    })
+    .unwrap_or(0)
+}
+
+// ===================================================================
+// ReplayEngine FFI (fixes single-pass limitations)
+// ===================================================================
+
+pub struct UvieReplayEngine {
+    inner: Mutex<ReplayEngine>,
+}
+
+impl UvieReplayEngine {
+    fn new() -> Self {
+        Self {
+            inner: Mutex::new(ReplayEngine::new()),
+        }
+    }
+}
+
+fn lock_replay<'a>(engine: *mut UvieReplayEngine) -> Option<MutexGuard<'a, ReplayEngine>> {
+    if engine.is_null() {
+        return None;
+    }
+    let engine_ref = unsafe { &*engine };
+    engine_ref.inner.lock().ok()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_replay_new() -> *mut UvieReplayEngine {
+    Box::into_raw(Box::new(UvieReplayEngine::new()))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_replay_free(engine: *mut UvieReplayEngine) {
+    if !engine.is_null() {
+        unsafe { drop(Box::from_raw(engine)); }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_replay_set_input_method(engine: *mut UvieReplayEngine, method: c_int) {
+    let _ = std::panic::catch_unwind(|| {
+        if let Some(mut e) = lock_replay(engine) {
+            let m = match method {
+                0 => InputMethod::Telex,
+                1 => InputMethod::Vni,
+                _ => return,
+            };
+            e.set_input_method(m);
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_replay_set_quick_start(engine: *mut UvieReplayEngine, enabled: c_int) {
+    let _ = std::panic::catch_unwind(|| {
+        if let Some(mut e) = lock_replay(engine) {
+            e.set_quick_start(enabled != 0);
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_replay_set_quick_telex(engine: *mut UvieReplayEngine, enabled: c_int) {
+    let _ = std::panic::catch_unwind(|| {
+        if let Some(mut e) = lock_replay(engine) {
+            e.set_quick_telex(enabled != 0);
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_replay_set_modern_orthography(engine: *mut UvieReplayEngine, enabled: c_int) {
+    let _ = std::panic::catch_unwind(|| {
+        if let Some(mut e) = lock_replay(engine) {
+            e.set_modern_orthography(enabled != 0);
+        }
+    });
+}
+
+/// Feed a single UTF-8 character.
+/// Returns the number of backspaces the caller must send,
+/// and writes the new output string into `out_buf`.
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_replay_feed(
+    engine: *mut UvieReplayEngine,
+    ch: c_char,
+    out_buf: *mut c_char,
+    out_len: usize,
+) -> usize {
+    std::panic::catch_unwind(|| {
+        if engine.is_null() || out_buf.is_null() || out_len == 0 {
+            return 0;
+        }
+        let c = ch as u8 as char;
+        let Some(mut e) = lock_replay(engine) else {
+            return 0;
+        };
+        let (backspaces, output) = e.feed(c);
+        write_output(&output, out_buf, out_len);
+        backspaces
+    })
+    .unwrap_or(0)
+}
+
+/// Handle backspace.
+/// Returns backspace count, writes new output into `out_buf`.
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_replay_backspace(
+    engine: *mut UvieReplayEngine,
+    out_buf: *mut c_char,
+    out_len: usize,
+) -> usize {
+    std::panic::catch_unwind(|| {
+        if engine.is_null() || out_buf.is_null() || out_len == 0 {
+            return 0;
+        }
+        let Some(mut e) = lock_replay(engine) else {
+            return 0;
+        };
+        let (backspaces, output) = e.backspace();
+        write_output(&output, out_buf, out_len);
+        backspaces
+    })
+    .unwrap_or(0)
+}
+
+/// Commit the current word (call on space / punctuation).
+/// Returns backspace count (usually 0), clears output buffer.
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_replay_commit(
+    engine: *mut UvieReplayEngine,
+    out_buf: *mut c_char,
+    out_len: usize,
+) -> usize {
+    std::panic::catch_unwind(|| {
+        if engine.is_null() || out_buf.is_null() || out_len == 0 {
+            return 0;
+        }
+        let Some(mut e) = lock_replay(engine) else {
+            return 0;
+        };
+        let (backspaces, output) = e.commit();
+        write_output(&output, out_buf, out_len);
+        backspaces
+    })
+    .unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_replay_reset(engine: *mut UvieReplayEngine) {
+    let _ = std::panic::catch_unwind(|| {
+        if let Some(mut e) = lock_replay(engine) {
+            e.reset();
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_replay_is_composing(engine: *const UvieReplayEngine) -> c_int {
+    std::panic::catch_unwind(|| {
+        if engine.is_null() {
+            return 0;
+        }
+        let engine_ref = unsafe { &*engine };
+        if let Ok(e) = engine_ref.inner.lock() {
+            if e.is_composing() { 1 } else { 0 }
+        } else {
+            0
+        }
     })
     .unwrap_or(0)
 }

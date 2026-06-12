@@ -4,6 +4,7 @@ pub mod buffers;
 pub mod engine;
 pub mod modes;
 pub mod phonetics;
+pub mod replay;
 pub mod tone;
 
 #[cfg(test)]
@@ -14,3 +15,4 @@ pub mod ffi;
 
 pub use crate::engine::UltraFastViEngine;
 pub use crate::modes::{InputMethod, ModeTrait, TelexMode, VniMode};
+pub use crate::replay::ReplayEngine;
