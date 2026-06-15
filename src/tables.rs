@@ -220,7 +220,7 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
     NucleusEntry { seq: &['i', 'ê'], tone_idx: 1 }, // iê / yê (tiến → tone on ê)
     NucleusEntry { seq: &['y', 'ê'], tone_idx: 1 }, // yê (huyền → tone on ê)
     NucleusEntry { seq: &['u', 'a'], tone_idx: 0 }, // ua (múa → tone on u)
-    NucleusEntry { seq: &['u', 'â'], tone_idx: 0 }, // uâ
+    NucleusEntry { seq: &['u', 'â'], tone_idx: 1 }, // uâ — tone on â (chuẩn, tuần)
     NucleusEntry { seq: &['u', 'ê'], tone_idx: 0 }, // uê
     NucleusEntry { seq: &['u', 'y'], tone_idx: 1 }, // uy (tuỳ → tone on y in modern ortho)
     NucleusEntry { seq: &['u', 'i'], tone_idx: 0 }, // ui

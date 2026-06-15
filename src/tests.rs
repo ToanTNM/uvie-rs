@@ -657,6 +657,10 @@ fn no_bubble_across_consonants() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "thajta"), "thật");
 
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "chuanar"), "chuẩn");
+    
+
     // Free-style across consonants without tone: nene -> nên
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "nene"), "nên");
@@ -1248,4 +1252,73 @@ fn debug_timff() {
     e.feed('f');
     // Double-cancel: tone removed, first 'f' stays as literal → "timf" passthrough
     assert_eq!(e.current_composing(), "timf", "timff = double cancel = timf (f as literal)");
+}
+
+#[test]
+fn debug_phat_sequences() {
+    // "phat" -> should be "phát"? No — "phat" has no tone key.
+    // "phas" -> "phás" (s=sắc), "phat" -> "phất"? No, t is coda not tone.
+    // "phast" = ph+a+s(tone)+t(coda) -> "phást"
+    let cases = [
+        ("phat",  "phát"),   // ph+a+t where t could be coda... "phát"?
+        ("phas",  "phás"),   // ph+a+s(sắc) = "phás"  
+        ("phast", "phást"),  // ph+a+s(sắc)+t(coda) = "phást"
+        ("phasst","phast"),  // ss cancel -> "phast" passthrough
+        ("phat",  "phát"),   // is "phat" valid Vietnamese? t is coda, no tone
+    ];
+    for (input, expected) in &cases {
+        let mut e = UltraFastViEngine::new();
+        let out = type_seq(&mut e, input);
+        println!("{:?} -> {:?} (expected {:?}) {}", input, out, expected, if out == *expected { "✓" } else { "✗" });
+    }
+}
+
+#[test]
+fn debug_when_phast_passthrough() {
+    // Find scenarios where phast does NOT give phát
+    
+    // Scenario: what if raw buffer already has data from before?
+    // E.g. "aphast" - a previous 'a' still in buffer
+    let cases = [
+        ("aphast",   "aphast"),  // 'a' left over → "aphast" passthrough?
+        ("phastx",   "phátx"),   // extra char after
+        ("nphast",   "nphast"),  // consonant before
+        (" phast",   " phát"),   // space then phast (space resets)
+    ];
+    for (input, expected) in &cases {
+        let mut e = UltraFastViEngine::new();
+        let out = type_seq(&mut e, input);
+        println!("{:?} -> {:?} (expected {:?})", input, out, expected);
+    }
+    
+    // What if the engine has a previous partial state?
+    // E.g. typed "phat" got "phat", then BS all, then type "phast"
+    let mut e = UltraFastViEngine::new();
+    type_seq(&mut e, "phat"); // "phat" passthrough? Or valid? 
+    println!("phat alone: {:?}", e.current_composing());
+    // Now backspace 4 times
+    for i in 0..4 { e.backspace(); }
+    println!("phat+4BS: {:?}", e.current_composing());
+    // Now type phast
+    let out = type_seq(&mut e, "phast");
+    println!("phat+4BS+phast: {:?}", out);
+}
+
+#[test]
+fn test_ua_diphthong_tone() {
+    // uâ diphthong: tone should be on â (index 1), not u (index 0)
+    // chuẩn = ch + uâ + n + nặng (ẩ)
+    // tuần = t + uâ + n + huyền (ầ)  
+    // suất = s + uâ + t + sắc (ấ)
+    let cases = [
+        ("chuanar", "chuẩn"),  // chuanar: u+aa→uâ, r=nặng, n coda
+        ("tuaanf",  "tuần"),   // tuânf: t+u+aa→tuâ+n, f=huyền 
+        ("suas",    "suất"),   // suat+s: wait, "suas" = s+u+a+s? no...
+    ];
+    for (input, expected) in &cases {
+        let mut e = UltraFastViEngine::new();
+        let out = type_seq(&mut e, input);
+        println!("{:?} -> {:?} (expected {:?}) {}", input, out, expected,
+            if out == *expected { "✓" } else { "✗" });
+    }
 }

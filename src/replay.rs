@@ -246,6 +246,19 @@ impl ReplayEngine {
         let prev = core::mem::take(&mut self.prev_output);
         let new_composed = self.inner.backspace().to_string();
         self.prev_inner_composed = new_composed.clone();
+
+        // When raw_buf is now empty, do a full reset so the engine state is
+        // perfectly clean. This avoids any residual state causing sync issues
+        // when the user types a new word after clearing with backspace.
+        if self.raw_buf.is_empty() {
+            self.inner.clear();
+            self.last_valid_raw_len = 0;
+            self.last_valid_out.clear();
+            // prev_output stays "" (new_composed should also be "")
+            let (bs, suffix) = diff_outputs(&prev, &new_composed);
+            return (bs, suffix);
+        }
+
         // Recompute last_valid state from the post-backspace output.
         let is_raw = is_raw_passthrough(&self.raw_buf, &new_composed);
         if is_raw {

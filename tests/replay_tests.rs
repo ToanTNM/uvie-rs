@@ -510,3 +510,281 @@ fn test_tim_typo_orders() {
         println!("{:?} -> {:?} (expected {:?})", input, s, expected);
     }
 }
+
+#[test]
+fn debug_phat_replay() {
+    let mut e = ReplayEngine::new();
+    let mut screen = String::new();
+    for ch in "phast".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("  fed {:?}: bs={} out={:?} screen={:?}", ch, bs, out, screen);
+    }
+    println!("phast -> {:?}", screen);
+    assert_eq!(screen, "phát", "phast should give phát");
+}
+
+#[test]
+fn debug_phat_after_backspace() {
+    // Simulate: type something, BS several times, then type "phast"
+    // This is the "asttuowng" / residue bug scenario.
+    
+    // Scenario 1: type "abc", BS 3 times (clear), type "phast"
+    {
+        let mut e = ReplayEngine::new();
+        let mut screen = String::new();
+        for ch in "abc".chars() {
+            let (bs, out) = e.feed(ch); 
+            for _ in 0..bs { screen.pop(); }
+            screen.push_str(&out);
+        }
+        // BS 3 times to clear
+        for _ in 0..3 {
+            let (bs, out) = e.backspace();
+            for _ in 0..bs { screen.pop(); }
+            screen.push_str(&out);
+        }
+        assert_eq!(screen, "", "after 3 BS screen empty");
+        // Now type phast
+        for ch in "phast".chars() {
+            let (bs, out) = e.feed(ch);
+            for _ in 0..bs { screen.pop(); }
+            screen.push_str(&out);
+        }
+        println!("abc+3BS+phast: {:?}", screen);
+        assert_eq!(screen, "phát", "after clearing abc, phast = phát");
+    }
+    
+    // Scenario 2: type "phatr" (phạtr → some word), BS 2 times, retype "st"
+    {
+        let mut e = ReplayEngine::new();
+        let mut screen = String::new();
+        for ch in "phatr".chars() {
+            let (bs, out) = e.feed(ch);
+            for _ in 0..bs { screen.pop(); }
+            screen.push_str(&out);
+        }
+        println!("phatr: {:?}", screen);
+        // BS 2 (remove r and t)
+        for _ in 0..2 {
+            let (bs, out) = e.backspace();
+            for _ in 0..bs { screen.pop(); }
+            screen.push_str(&out);
+        }
+        println!("phatr+2BS: {:?}", screen);
+        // Continue with "st"
+        for ch in "st".chars() {
+            let (bs, out) = e.feed(ch);
+            for _ in 0..bs { screen.pop(); }
+            screen.push_str(&out);
+            println!("  fed {:?}: bs={} out={:?} screen={:?}", ch, bs, out, screen);
+        }
+        println!("phatr+2BS+st: {:?}", screen);
+        assert_eq!(screen, "phát", "phatr+2BS+st = phát");
+    }
+}
+
+#[test]
+fn debug_phat_space_retry() {
+    // User sees "phast" on screen after space, types space again then "phast"
+    // = commit "phast" (as passthrough?), then "phast" again fresh
+    
+    // More likely: user typed something that caused the word boundary to not reset.
+    // Test: type "phas" (→ "phá"), then type 't' slowly vs fast
+    
+    // What if "phast" in user's context arrives as two events from previous 
+    // word + new word? E.g. word ends with 'p', then user types "hast":
+    {
+        let mut e = ReplayEngine::new();
+        let mut screen = String::new();
+        // Previous word ends with 'p' already composing
+        for ch in "p".chars() {
+            let (bs, out) = e.feed(ch);
+            for _ in 0..bs { screen.pop(); }
+            screen.push_str(&out);
+        }
+        // Now types "hast" (continuation)
+        for ch in "hast".chars() {
+            let (bs, out) = e.feed(ch);
+            for _ in 0..bs { screen.pop(); }
+            screen.push_str(&out);
+            println!("  fed {:?}: bs={} out={:?} screen={:?}", ch, bs, out, screen);
+        }
+        println!("p+hast: {:?}", screen);
+        // With raw=[p,h,a,s,t]: ph onset, a vowel, s tone, t coda → "phát"
+        assert_eq!(screen, "phát", "p+hast should compose phát");
+    }
+}
+
+#[test]
+fn debug_phat_vcv_trigger() {
+    // After space (word boundary), type "phast" fast
+    // The 's' could trigger VCV if prev word ended in a vowel...
+    // But space should have reset everything.
+    
+    // Simulate: type "de " (để → "để") then "phast"
+    let mut e = ReplayEngine::new();
+    let mut screen = String::new();
+    
+    // Type "def " (đề → with huyền → "để" then space)
+    for ch in "de ".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    println!("'de ': {:?}", screen);
+    
+    // Now type "phast"
+    for ch in "phast".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("  fed {:?}: bs={} out={:?} screen={:?}", ch, bs, out, screen);
+    }
+    println!("de +phast: {:?}", screen);
+    assert_eq!(screen, "de phát", "de +phast = de phát");
+    
+    // More specific: what if previous word was "phat" (English passthrough)
+    // and user BS to retype?
+    let mut e2 = ReplayEngine::new();
+    let mut screen2 = String::new();
+    for ch in "phat".chars() {
+        let (bs, out) = e2.feed(ch);
+        for _ in 0..bs { screen2.pop(); }
+        screen2.push_str(&out);
+    }
+    println!("phat initial: {:?}", screen2);
+    // BS all 4
+    for _ in 0..4 {
+        let (bs, out) = e2.backspace();
+        for _ in 0..bs { screen2.pop(); }
+        screen2.push_str(&out);
+    }
+    println!("phat+4BS: {:?}", screen2);
+    // Retype phast
+    for ch in "phast".chars() {
+        let (bs, out) = e2.feed(ch);
+        for _ in 0..bs { screen2.pop(); }
+        screen2.push_str(&out);
+        println!("  fed {:?}: bs={} out={:?} screen={:?}", ch, bs, out, screen2);
+    }
+    println!("phat+4BS+phast: {:?}", screen2);
+    assert_eq!(screen2, "phát");
+}
+
+#[test]
+fn debug_phat_bs_partial_retype() {
+    // Type "ph", then "at", then BS 2 to remove "at", then type "ast"
+    // net result: raw = [p,h,a,s,t] → "phát"
+    let mut e = ReplayEngine::new();
+    let mut screen = String::new();
+    
+    for ch in "phat".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    println!("phat: {:?}", screen);
+    
+    // BS twice  
+    for i in 0..2 {
+        let (bs, out) = e.backspace();
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("BS {}: {:?}", i+1, screen);
+    }
+    
+    // Retype "ast"
+    for ch in "ast".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("  fed {:?}: bs={} out={:?} screen={:?}", ch, bs, out, screen);
+    }
+    println!("phat+2BS+ast: {:?}", screen);
+    assert_eq!(screen, "phát", "phat+2BS+ast = phát");
+    
+    // Also: BS from mid-word composing state
+    // "phat" with partial edit
+    let mut e2 = ReplayEngine::new();
+    let mut screen2 = String::new();
+    for ch in "ph".chars() {
+        let (bs, out) = e2.feed(ch);
+        for _ in 0..bs { screen2.pop(); }
+        screen2.push_str(&out);
+    }
+    // Now type "a" making "pha"
+    for ch in "a".chars() {
+        let (bs, out) = e2.feed(ch);
+        for _ in 0..bs { screen2.pop(); }
+        screen2.push_str(&out);
+    }
+    println!("pha: {:?}", screen2);
+    // BS once
+    let (bs, out) = e2.backspace();
+    for _ in 0..bs { screen2.pop(); }
+    screen2.push_str(&out);
+    println!("pha+BS: {:?}", screen2);
+    // Continue with "ast"
+    for ch in "ast".chars() {
+        let (bs, out) = e2.feed(ch);
+        for _ in 0..bs { screen2.pop(); }
+        screen2.push_str(&out);
+        println!("  fed {:?}: bs={} out={:?} screen={:?}", ch, bs, out, screen2);
+    }
+    println!("pha+BS+ast: {:?}", screen2);
+    assert_eq!(screen2, "phát", "pha+BS+ast = phát (s=sắc tone, t=coda)");
+}
+
+#[test]
+fn debug_vcv_then_phat() {
+    // After a VCV split (e.g. "naabo" → "na" committed + "bo" composing),
+    // type "phast" fresh after space commit.
+    let mut e = ReplayEngine::new();
+    let mut screen = String::new();
+    
+    // Trigger a VCV: "naabo"
+    for ch in "naabo".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    println!("naabo: screen={:?} committed={:?}", screen, e.committed_text());
+    
+    // Space to commit
+    let (bs, out) = e.feed(' ');
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("space: {:?}", screen);
+    
+    // Type "phast"
+    for ch in "phast".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    println!("phast after: {:?}", screen);
+    assert!(screen.ends_with("phát"), "should end with phát, got {:?}", screen);
+}
+
+#[test]
+fn test_no_bs_without_out() {
+    // Invariant: if bs > 0, out must be non-empty
+    // (we're replacing something with something else)
+    let test_cases: Vec<&str> = vec![
+        "phast", "tìm", "gif", "thajta", "naabo", "banana",
+        "phat", "tess", "timff", "giss", "added",
+    ];
+    for word in test_cases {
+        let mut e = ReplayEngine::new();
+        for ch in word.chars() {
+            let (bs, out) = e.feed(ch);
+            assert!(
+                !(bs > 0 && out.is_empty()),
+                "word={:?} char={:?}: bs={} but out is empty — would delete without replacement",
+                word, ch, bs
+            );
+        }
+    }
+}
