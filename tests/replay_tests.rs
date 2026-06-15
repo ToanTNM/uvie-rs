@@ -401,3 +401,112 @@ fn test_bs_and_type_thajta_again() {
         screen
     );
 }
+
+#[test]
+fn debug_gif_tim() {
+    // "gif" -> should be "gì" (g+i+f where f=huyền) ?
+    // Actually "gif" in Telex: g=consonant, i=vowel, f=tone(huyền) → "gì"
+    // But "gif" is also an English word...
+    let mut e = ReplayEngine::new();
+    let mut screen = String::new();
+    for ch in "gif".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("  fed {:?}: bs={} out={:?} screen={:?}", ch, bs, out, screen);
+    }
+    println!("gif -> {:?}", screen);
+    
+    // "tim" -> "tìm" (t+i+m, no tone = "tim") or "tìm" (with tone?)
+    // Actually "tim" in Telex: t=onset, i=nucleus, m=coda → "tim" (level tone, no tone key)
+    let mut e2 = ReplayEngine::new();
+    let mut screen2 = String::new();
+    for ch in "tim".chars() {
+        let (bs, out) = e2.feed(ch);
+        for _ in 0..bs { screen2.pop(); }
+        screen2.push_str(&out);
+        println!("  fed {:?}: bs={} out={:?} screen={:?}", ch, bs, out, screen2);
+    }
+    println!("tim -> {:?}", screen2);
+    
+    // "timf" -> "tìm" (t+i+m+f where f=huyền tone applied to nucleus i)
+    let mut e3 = ReplayEngine::new();
+    let mut screen3 = String::new();
+    for ch in "timf".chars() {
+        let (bs, out) = e3.feed(ch);
+        for _ in 0..bs { screen3.pop(); }
+        screen3.push_str(&out);
+    }
+    println!("timf -> {:?}", screen3);
+}
+
+#[test]
+fn test_tim_sequences() {
+    // "tìm" in Telex = "timf" (t+i+m+f where f=huyền)
+    // But user reports "tìm" sometimes correct, sometimes not.
+    // Possible fast-typing scenario: user types "timf" very fast,
+    // or maybe "tim " (with space) = "tim" plain.
+    
+    // Scenario 1: t+i+m+f = "tìm"
+    let mut e = ReplayEngine::new();
+    let mut s = String::new();
+    for ch in "timf".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { s.pop(); }
+        s.push_str(&out);
+    }
+    assert_eq!(s, "tìm", "timf = tìm");
+    
+    // Scenario 2: t+i+m (no tone key) = "tim" (level tone)
+    let mut e2 = ReplayEngine::new();
+    let mut s2 = String::new();
+    for ch in "tim".chars() {
+        let (bs, out) = e2.feed(ch);
+        for _ in 0..bs { s2.pop(); }
+        s2.push_str(&out);
+    }
+    assert_eq!(s2, "tim", "tim (no tone) = tim");
+    
+    // Scenario 3: fast-typing "tim " (with space)
+    let mut e3 = ReplayEngine::new();
+    let mut s3 = String::new();
+    for ch in "tim ".chars() {
+        let (bs, out) = e3.feed(ch);
+        for _ in 0..bs { s3.pop(); }
+        s3.push_str(&out);
+    }
+    println!("tim+space: {:?}", s3);
+    
+    // Scenario 4: "tìm " — is "tìm" committed correctly?
+    let mut e4 = ReplayEngine::new();
+    let mut s4 = String::new();
+    for ch in "timf ".chars() {
+        let (bs, out) = e4.feed(ch);
+        for _ in 0..bs { s4.pop(); }
+        s4.push_str(&out);
+    }
+    println!("timf+space: {:?}", s4);
+    assert!(s4.contains("tìm"), "timf+space should contain tìm, got {:?}", s4);
+}
+
+#[test]
+fn test_tim_typo_orders() {
+    // Fast typing can scramble key order. Test all permutations that make sense.
+    let cases: &[(&str, &str)] = &[
+        ("timf",  "tìm"),   // correct order
+        ("tfim",  "tìm"),   // tone before last vowel — should still work?
+        ("tifm",  "tìm"),   // tone after i, before m
+        ("tfmi",  "tfmi"),  // very scrambled — passthrough expected
+        ("timff", "timf"),  // double-f cancels tone, first f stays as literal → "timf"
+    ];
+    for (input, expected) in cases {
+        let mut e = ReplayEngine::new();
+        let mut s = String::new();
+        for ch in input.chars() {
+            let (bs, out) = e.feed(ch);
+            for _ in 0..bs { s.pop(); }
+            s.push_str(&out);
+        }
+        println!("{:?} -> {:?} (expected {:?})", input, s, expected);
+    }
+}

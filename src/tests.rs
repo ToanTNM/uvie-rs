@@ -1196,3 +1196,56 @@ fn test_backspace_thajta_sequence() {
     e.feed('t');
     assert_eq!(e.current_composing(), "thajtat", "thajt+a+t → passthrough (tt coda invalid)");
 }
+
+#[test]
+fn debug_gif_inner() {
+    let mut e = UltraFastViEngine::new();
+    e.feed('g'); println!("after g: {:?}", e.current_composing());
+    e.feed('i'); println!("after i: {:?}", e.current_composing());
+    e.feed('f'); println!("after f: {:?}", e.current_composing());
+    // also test tim
+    let mut e2 = UltraFastViEngine::new();
+    e2.feed('t'); e2.feed('i'); e2.feed('m');
+    println!("tim: {:?}", e2.current_composing());
+    // and timf  
+    let mut e3 = UltraFastViEngine::new();
+    e3.feed('t'); e3.feed('i'); e3.feed('m'); e3.feed('f');
+    println!("timf: {:?}", e3.current_composing());
+    // gif with assertion
+    let mut e4 = UltraFastViEngine::new();
+    for ch in "gif".chars() { e4.feed(ch); }
+    assert_eq!(e4.current_composing(), "gì", "gif should produce gì");
+}
+
+#[test]
+fn debug_gif_step_by_step() {
+    let mut e = UltraFastViEngine::new();
+    let out_g = e.feed('g').to_string();
+    println!("g: {:?}", out_g);
+    let out_i = e.feed('i').to_string();
+    println!("i: {:?}", out_i);
+    let out_f = e.feed('f').to_string();
+    println!("f: {:?}", out_f);
+    assert_eq!(out_f, "gì", "g+i+f should produce gì");
+}
+
+#[test]
+fn debug_gif_via_is_valid() {
+    // Check: does "gi" validate as Vietnamese?
+    // onset = [g], nucleus = [i], coda = []
+    use crate::tables::{is_legal_onset, is_legal_nucleus, is_legal_coda};
+    assert!(is_legal_onset(b"g"), "g is legal onset");
+    assert!(is_legal_nucleus(&['i']), "i is legal nucleus");
+    assert!(is_legal_coda(b""), "empty coda is legal");
+    println!("All table checks pass for g+i");
+}
+
+#[test]
+fn debug_timff() {
+    let mut e = UltraFastViEngine::new();
+    for ch in "timf".chars() { e.feed(ch); }
+    assert_eq!(e.current_composing(), "tìm", "timf = tìm");
+    e.feed('f');
+    // Double-cancel: tone removed, first 'f' stays as literal → "timf" passthrough
+    assert_eq!(e.current_composing(), "timf", "timff = double cancel = timf (f as literal)");
+}

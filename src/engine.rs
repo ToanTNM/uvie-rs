@@ -707,9 +707,12 @@ impl UltraFastViEngine {
             };
             self.buf.set(carrier_idx, reverted);
 
-            // Remove the second (duplicate) tone key from raw (it was consumed).
+            // The first tone key stays in raw; only remove the second (duplicate).
+            // This way render_passthrough outputs the word with the tone key as a
+            // literal consonant: "tess" → raw=[t,e,s] → "tes", "teff" → "tef", etc.
             if self.raw_len > 0 { self.raw_len -= 1; }
-            // The first tone key becomes a plain coda consonant in buf.
+            // The first tone key becomes a coda consonant in buf (may make the word
+            // invalid → render_passthrough picks it up from raw instead).
             self.buf.push(Syl::consonant(first_tone_b, caps));
             return;
         }
@@ -877,17 +880,24 @@ impl UltraFastViEngine {
         }
 
         // Special case: `gi` digraph — if onset ends with `g` and the next
-        // entry is plain `i`, treat that `i` as part of the onset (glide).
+        // entry is plain `i` AND there is at least one more vowel after it,
+        // treat that `i` as part of the onset (it's a glide, not a nucleus).
+        // e.g. "giải": g + [i-glide] + a + i-coda → onset=gi, nucleus=a
+        //      "giường": g + [i-glide] + ươ + ng
+        // But "gì": g + ì (tone on i) — the `i` IS the nucleus, not a glide.
+        // We detect this by requiring a vowel after the `i` to confirm it's a glide.
         if onset_end < n
             && onset_end > 0
             && self.buf.get(onset_end - 1).base == b'g'
         {
             let prev2 = if onset_end >= 2 { self.buf.get(onset_end - 2).base } else { 0 };
-            // Only match `gi` (not `ngi` or other combos). Check that the `g` is
-            // at position onset_end-1 and there's no 'n' immediately before (ng vs g).
+            // Only match `gi` (not `ngi` or `ng+i` combos).
             if prev2 != b'n' {
                 let next = self.buf.get(onset_end);
-                if next.base == b'i' && next.flags == 0 {
+                // The `i` is a glide only when followed by another vowel.
+                let has_vowel_after_i = onset_end + 1 < n
+                    && self.is_vowel_entry(self.buf.get(onset_end + 1));
+                if next.base == b'i' && next.flags == 0 && has_vowel_after_i {
                     onset_end += 1;
                 }
             }
