@@ -450,6 +450,21 @@ impl UltraFastViEngine {
                     self.reapply_tone_after_nucleus_change();
                     return;
                 }
+                b'w' if syl.flags & F_HORN != 0 => {
+                    // Double-w cancel on a standalone ư nucleus (the first 'w'
+                    // became ư via the onset path below). Revert ư → plain 'w'
+                    // and decrement raw_len so only the first 'w' stays in raw.
+                    // Push a second literal 'w' so the buf is [w_lit, w_lit] which
+                    // is never a valid Vietnamese onset/nucleus → passthrough uses
+                    // raw[0..raw_len] = "w" = just the first w, making subsequent
+                    // letters continue as normal passthrough (e.g. "wwork" → "work").
+                    let reverted = Syl::literal(b'w', syl.flags & F_CAPS != 0);
+                    self.buf.set(i, reverted);
+                    if self.raw_len > 0 { self.raw_len -= 1; }
+                    self.buf.push(Syl::literal(b'w', caps));
+                    self.reapply_tone_after_nucleus_change();
+                    return;
+                }
                 b'd' => {
                     // 'w' doesn't target 'd' — stop scan.
                     break;

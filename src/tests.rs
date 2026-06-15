@@ -660,10 +660,10 @@ fn no_bubble_across_consonants() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "chuanar"), "chuẩn");
 
-    // wwork: 'w' alone → ư vowel, second 'w' double-cancel → passthrough "wwork"
-    // (not "work" — free-style does not apply across word boundary here)
+    // wwork: 'w' alone → ư nucleus, second 'w' double-cancel reverts ư → w literal,
+    // subsequent ork continues as passthrough → "work" (like "dd"→"đ", "ddd"→"dd")
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "wwork"), "wwork");
+    assert_eq!(type_seq(&mut e, "wwork"), "work");
     
 
     // Free-style across consonants without tone: nene -> nên
@@ -1366,4 +1366,30 @@ fn debug_inner_neee() {
         let rl = e.raw_len();
         println!("fed {:?}: out={:?} raw={}", ch, out, rl);
     }
+}
+
+#[test]
+fn debug_ww_behavior() {
+    let mut e = UltraFastViEngine::new();
+    for ch in "wwork".chars() {
+        let out = e.feed(ch).to_string();
+        let rl = e.raw_len();
+        println!("fed {:?}: out={:?} raw={}", ch, out, rl);
+    }
+}
+
+#[test]
+fn test_double_w_cancel() {
+    // ww → "w" (cancel ư, render passthrough with raw="w")
+    let mut e = UltraFastViEngine::new(); assert_eq!(type_seq(&mut e, "ww"), "w");
+    // wwork → "work"
+    let mut e = UltraFastViEngine::new(); assert_eq!(type_seq(&mut e, "wwork"), "work");
+    // www → "ww" (triple: ww cancel → "w", 3rd w makes "ww")
+    let mut e = UltraFastViEngine::new(); assert_eq!(type_seq(&mut e, "www"), "ww");
+    // Regular ow → ơ still works
+    let mut e = UltraFastViEngine::new(); assert_eq!(type_seq(&mut e, "ow"), "ơ");
+    // Regular uw → ư still works
+    let mut e = UltraFastViEngine::new(); assert_eq!(type_seq(&mut e, "uw"), "ư");
+    // oww → "ow" (cancel)
+    let mut e = UltraFastViEngine::new(); assert_eq!(type_seq(&mut e, "oww"), "ow");
 }
