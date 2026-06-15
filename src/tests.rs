@@ -1175,3 +1175,24 @@ fn test_look_should_cancel() {
     assert_eq!(type_seq(&mut e, "loook"), "look",
         "Double 'o' should cancel, leaving single 'o'");
 }
+
+#[test]
+fn test_backspace_thajta_sequence() {
+    let mut e = UltraFastViEngine::new();
+    // type thajta → thật
+    for ch in "thajta".chars() { e.feed(ch); }
+    assert_eq!(e.current_composing(), "thật");
+    // backspace once → removes last raw 'a', back to "thạt"
+    e.backspace();
+    assert_eq!(e.current_composing(), "thạt", "after 1 BS: thạt");
+    // type 'a' again → should give back thật
+    e.feed('a');
+    assert_eq!(e.current_composing(), "thật", "retype a: back to thật");
+    // backspace removes 'a' again
+    e.backspace();
+    // type 'a' and 't' (continue composing):
+    // "thajtat" = raw passthrough because coda "tt" is invalid.
+    e.feed('a');
+    e.feed('t');
+    assert_eq!(e.current_composing(), "thajtat", "thajt+a+t → passthrough (tt coda invalid)");
+}

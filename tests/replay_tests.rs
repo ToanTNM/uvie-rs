@@ -229,3 +229,175 @@ fn test_fast_typing_ddau() {
     // "ddaau" → đâu (đ from dd, â from aa, u appended)
     assert_replay("ddaau", "đâu");
 }
+
+#[test]
+fn test_backspace_then_retype() {
+    // Type "thajta", backspace once, retype "thajta" — should give "thật" twice? No,
+    // backspace removes one char so we'd have "thajt" + "a" again = "thật".
+    let mut engine = ReplayEngine::new();
+    let mut screen = String::new();
+    
+    // Type "thajta"
+    for ch in "thajta".chars() {
+        let (bs, out) = engine.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    println!("after thajta: {:?}", screen);
+    
+    // Backspace once
+    let (bs, out) = engine.backspace();
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("after BS: {:?}", screen);
+    
+    // Type 'a' again
+    let (bs, out) = engine.feed('a');
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("after 'a': {:?}", screen);
+    
+    assert_eq!(screen, "thật", "backspace + retype 'a' should recover thật");
+}
+
+#[test]
+fn test_backspace_retype_full_word() {
+    // Type "thajta", BS once, then type "thajta" again (as if retyping the whole word)
+    let mut engine = ReplayEngine::new();
+    let mut screen = String::new();
+    
+    for ch in "thajta".chars() {
+        let (bs, out) = engine.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    println!("after thajta: {:?}", screen);
+    
+    // Backspace once (removes last 'a')
+    let (bs, out) = engine.backspace();
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("after BS: {:?}", screen);
+    
+    // Now type "thajta" again (the user retyped)
+    for ch in "thajta".chars() {
+        let (bs, out) = engine.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("  fed {:?}: screen={:?} (bs={}, out={:?})", ch, screen, bs, out);
+    }
+    println!("final: {:?}", screen);
+}
+
+#[test]
+fn test_backspace_retype_scenario2() {
+    // User scenario: type "thajta", see "thật", then BS once = "thạt",
+    // then want to type the word again from scratch by pressing more BS
+    // to clear then retyping
+    let mut engine = ReplayEngine::new();
+    let mut screen = String::new();
+    
+    for ch in "thajta".chars() {
+        let (bs, out) = engine.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    println!("after thajta: {:?}", screen);
+    assert_eq!(screen, "thật");
+    
+    // BS 6 times to clear everything
+    for i in 0..6 {
+        let (bs, out) = engine.backspace();
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("BS {}: screen={:?}", i+1, screen);
+    }
+    assert_eq!(screen, "", "6 BS should clear the 6 raw chars");
+    
+    // Retype thajta fresh
+    for ch in "thajta".chars() {
+        let (bs, out) = engine.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    println!("retyped: {:?}", screen);
+    assert_eq!(screen, "thật");
+}
+
+#[test] 
+fn test_sticky_after_backspace() {
+    // Scenario: type "thajta" (6 raw chars), BS 1 (→ 5 raw "thajt"),
+    // then continue typing "a" → should give "thật", not get stuck.
+    // This simulates "I mistyped, let me fix last char".
+    let mut engine = ReplayEngine::new();
+    let mut screen = String::new();
+    
+    for ch in "thajt".chars() { // type 5 chars
+        let (bs, out) = engine.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    println!("after thajt: {:?}", screen);
+    // Should show "thạt" (valid coda, j applied nặng)
+    
+    let (bs, out) = engine.feed('a'); // type the modifier 'a'
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("after a: {:?}", screen);
+    assert_eq!(screen, "thật", "thajt+a = thật");
+    
+    // Now BS once: removes 'a' (last raw key), back to "thạt"
+    let (bs, out) = engine.backspace();
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("after BS: {:?}", screen);
+    assert_eq!(screen, "thạt");
+    
+    // Type 'a' again: should give "thật" again
+    let (bs, out) = engine.feed('a');
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("after a again: {:?}", screen);
+    assert_eq!(screen, "thật", "after BS + retype 'a' should recover thật");
+}
+
+#[test]
+fn test_bs_and_type_thajta_again() {
+    // Simulate: type "thajta" → "thật", BS once, then continue with "thajta"
+    // This is what the macOS IME sees when user types a word, presses BS once,
+    // then types the correction.
+    // After BS(1): raw has 5 chars [t,h,a,j,t]. Then user types "a" to fix = "thật".
+    // If user instead types "thajta" again = 6 more chars appended to the 5 = 11 raw chars.
+    let mut engine = ReplayEngine::new();
+    let mut screen = String::new();
+    
+    for ch in "thajta".chars() {
+        let (bs, out) = engine.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    assert_eq!(screen, "thật");
+    
+    // BS once
+    let (bs, out) = engine.backspace();
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    assert_eq!(screen, "thạt");
+    
+    // Now what if user mistakenly types "thajta" again (appending to raw)?
+    // This simulates the "dính chữ" bug scenario. Each char should produce
+    // at most bs=1 + 1 char out (no large jumps that corrupt the screen).
+    for ch in "thajta".chars() {
+        let (bs, out) = engine.feed(ch);
+        // Key invariant: no large backspace bursts (was producing bs=3 before fix)
+        assert!(bs <= 1, "bs={} for char {:?} — should never exceed 1 in passthrough append", bs, ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    // Screen should be a clean passthrough sequence, no garbled chars.
+    assert!(
+        screen.chars().all(|c| c.is_ascii() || c.is_alphabetic()),
+        "screen {:?} should not contain garbled/unexpected chars",
+        screen
+    );
+}

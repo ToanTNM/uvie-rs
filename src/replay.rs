@@ -50,7 +50,11 @@ pub struct ReplayEngine {
     /// Used to replay the second syllable after a V-C-V split.
     raw_buf: arrayvec::ArrayVec<char, 24>,
     /// Exact string currently visible on screen (composing portion only).
+    /// May differ from inner.out_buf by at most one optimistic consonant suffix.
     prev_output: String,
+    /// What the inner engine last produced. Used as the true baseline for diffs
+    /// when the optimistic display is active (so we don't drift over multiple keys).
+    prev_inner_composed: String,
     /// Accumulated auto-committed text (syllables committed via V-C-V split).
     committed: String,
     /// Length of raw_buf at the point of the last valid (non-raw) Vietnamese output.
@@ -67,6 +71,7 @@ impl ReplayEngine {
             inner: UltraFastViEngine::new(),
             raw_buf: arrayvec::ArrayVec::new(),
             prev_output: String::new(),
+            prev_inner_composed: String::new(),
             committed: String::new(),
             last_valid_raw_len: 0,
             last_valid_out: String::new(),
@@ -109,6 +114,7 @@ impl ReplayEngine {
             self.inner.clear();
             self.raw_buf.clear();
             self.prev_output.clear();
+            self.prev_inner_composed.clear();
             self.committed.clear();
             self.last_valid_raw_len = 0;
             self.last_valid_out.clear();
@@ -123,12 +129,14 @@ impl ReplayEngine {
             self.committed.push_str(&prev_composed);
             self.inner.clear();
             self.raw_buf.clear();
+            self.prev_inner_composed.clear();
             self.last_valid_raw_len = 0;
             self.last_valid_out.clear();
             let _ = self.raw_buf.try_push(ch);
             let new_composed = self.inner.feed(ch).to_string();
             let (bs, suffix) = diff_outputs(&screen_before, &new_composed);
-            self.prev_output = new_composed;
+            self.prev_output = new_composed.clone();
+            self.prev_inner_composed = new_composed;
             return (bs, suffix);
         }
 
@@ -145,22 +153,40 @@ impl ReplayEngine {
         }
 
         // Optimistic display: if the inner engine just went to raw passthrough
-        // after adding a single consonant (non-tone-key) to an otherwise valid
+        // after adding a SINGLE consonant (non-tone-key) to an otherwise valid
         // Vietnamese word, show the composed form with the consonant appended.
         // This lets "nêb" display while composing, giving better UX before the
         // next vowel triggers VCV detection.
-        // We only do this in ReplayEngine (not the inner engine) — the inner
-        // engine's raw passthrough is used for VCV detection above.
-        let display_composed = if is_now_raw
+        //
+        // IMPORTANT: diff is computed against `prev_inner_composed` (the actual
+        // inner engine output from last step), not `prev_output` (the possibly
+        // optimistic screen display). This prevents drift when the user keeps
+        // typing after the optimistic consonant.
+        let is_optimistic = is_now_raw
             && !self.last_valid_out.is_empty()
             && !ch_is_consonant_tone_key(ch, &self.inner)
-            && is_single_consonant_appended(&self.raw_buf, self.last_valid_raw_len)
-        {
-            // Show the last valid Vietnamese + this consonant as display.
+            && is_single_consonant_appended(&self.raw_buf, self.last_valid_raw_len);
+
+        let display_composed = if is_optimistic {
             format!("{}{}", self.last_valid_out, ch)
         } else {
             new_composed.clone()
         };
+
+        // Choose the correct baseline for diff:
+        // - If the previous step showed an OPTIMISTIC display (e.g. "thạtt") but
+        //   the inner engine had a different string ("thajtt"), and this step is NOT
+        //   optimistic, diff from the inner engine's previous output, not the screen.
+        //   This prevents garbled output when the user keeps typing after an
+        //   optimistic consonant (the "dính chữ" / sticky-char bug).
+        // - Otherwise diff from prev_output as normal.
+        let prev_was_optimistic = self.prev_output != self.prev_inner_composed;
+        let diff_baseline = if !is_optimistic && prev_was_optimistic {
+            self.prev_inner_composed.clone()
+        } else {
+            self.prev_output.clone()
+        };
+        self.prev_inner_composed = new_composed.clone();
 
         // V-C-V boundary detection:
         // Triggered when the current char is a vowel AND the inner engine now
@@ -189,13 +215,14 @@ impl ReplayEngine {
                     new_composed2 = self.inner.feed(c).to_string();
                 }
 
-                // Compute diff against full screen (committed + composing).
+                // Diff from the screen truth (prev_output, which may be optimistic).
                 let full_screen = format!("{}{}", committed_out, new_composed2);
                 let (bs, suffix) = diff_outputs(&self.prev_output, &full_screen);
 
                 // Reset tracking — new syllable starts fresh.
                 self.raw_buf = new_syl_raw;
                 self.prev_output = new_composed2.clone();
+                self.prev_inner_composed = new_composed2.clone();
                 let is_new_raw = is_raw_passthrough(&self.raw_buf, &new_composed2);
                 self.last_valid_raw_len = if is_new_raw { 0 } else { self.raw_buf.len() };
                 self.last_valid_out = if is_new_raw { String::new() } else { new_composed2 };
@@ -203,8 +230,8 @@ impl ReplayEngine {
             }
         }
 
-        // Normal path.
-        let (bs, suffix) = diff_outputs(&self.prev_output, &display_composed);
+        // Normal path: diff from the correct baseline.
+        let (bs, suffix) = diff_outputs(&diff_baseline, &display_composed);
         self.prev_output = display_composed;
         (bs, suffix)
     }
@@ -215,11 +242,19 @@ impl ReplayEngine {
             return (0, String::new());
         }
         self.raw_buf.pop();
-        // Recompute last_valid after backspace (simplified: just reset tracking).
-        self.last_valid_raw_len = 0;
-        self.last_valid_out.clear();
+        // Use prev_output as the screen truth (may be optimistic from prev step).
         let prev = core::mem::take(&mut self.prev_output);
         let new_composed = self.inner.backspace().to_string();
+        self.prev_inner_composed = new_composed.clone();
+        // Recompute last_valid state from the post-backspace output.
+        let is_raw = is_raw_passthrough(&self.raw_buf, &new_composed);
+        if is_raw {
+            self.last_valid_raw_len = 0;
+            self.last_valid_out.clear();
+        } else {
+            self.last_valid_raw_len = self.raw_buf.len();
+            self.last_valid_out = new_composed.clone();
+        }
         let (bs, suffix) = diff_outputs(&prev, &new_composed);
         self.prev_output = new_composed;
         (bs, suffix)
@@ -230,6 +265,7 @@ impl ReplayEngine {
         self.inner.clear();
         self.raw_buf.clear();
         self.prev_output.clear();
+        self.prev_inner_composed.clear();
         self.last_valid_raw_len = 0;
         self.last_valid_out.clear();
         // NOTE: `committed` is NOT cleared — preserved for debugging/testing.
@@ -241,6 +277,7 @@ impl ReplayEngine {
         self.inner.clear();
         self.raw_buf.clear();
         self.prev_output.clear();
+        self.prev_inner_composed.clear();
         self.committed.clear();
         self.last_valid_raw_len = 0;
         self.last_valid_out.clear();
