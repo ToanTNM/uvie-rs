@@ -15,7 +15,7 @@ final class SettingsWindow {
                 backing: .buffered,
                 defer: false
             )
-            w.title = "Cài đặt UVieKey"
+            w.title = "UVieKey"
             w.titlebarAppearsTransparent = true
             w.isMovableByWindowBackground = true
             w.contentView = NSHostingView(rootView: SettingsView())

@@ -117,6 +117,15 @@ pub const CLASSIFY_VNI: [u8; 256] = {
     t[b'3' as usize] = IS_TONE_KEY;
     t[b'4' as usize] = IS_TONE_KEY;
     t[b'5' as usize] = IS_TONE_KEY;
+
+    // VNI modifiers: 6=circumflex, 7=horn(o/u), 8=breve(a), 9=đ
+    t[b'6' as usize] = IS_MODIFIER;
+    t[b'7' as usize] = IS_MODIFIER;
+    t[b'8' as usize] = IS_MODIFIER;
+    t[b'9' as usize] = IS_MODIFIER;
+
+    // In VNI, 'd' is also a modifier (for 'd9' → đ).
+    t[b'd' as usize] = IS_MODIFIER;
     t
 };
 

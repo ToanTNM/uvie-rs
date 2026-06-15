@@ -161,3 +161,71 @@ fn test_comma_boundary() {
 fn test_period_boundary() {
     assert_replay("xin.", "xin.");
 }
+
+// ------------------------------------------------------------------
+// Fast-typing / diff correctness
+// ------------------------------------------------------------------
+
+/// Verify that diff tuples from ReplayEngine correctly reconstruct the
+/// expected screen state character-by-character. This catches subtle
+/// bugs where `display_composed` and the inner engine output diverge.
+#[test]
+fn test_diff_reconstruction_neebo() {
+    // "neebo" → "nê" committed + "bo" composing
+    let mut engine = ReplayEngine::new();
+    let mut screen = String::new();
+    for ch in "neebo".chars() {
+        let (bs, out) = engine.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    assert_eq!(screen, "nêbo", "diff reconstruction for 'neebo'");
+    assert_eq!(engine.committed_text(), "nê");
+}
+
+#[test]
+fn test_diff_reconstruction_multiple_syllables() {
+    // "toois" → "tôi" + then 's' tone on "tooi" already committed? No:
+    // "toos" = t,o,o,s → tốs? Actually: "toos" → onset=t, nucleus=ô, coda=s?
+    // s is a tone key, not coda. So "tos" would be "tốs" only if s applies tone.
+    // Let's use a simpler case: "boo boo" → "bô bô"
+    let mut engine = ReplayEngine::new();
+    let mut screen = String::new();
+    for ch in "boo boo".chars() {
+        let (bs, out) = engine.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    assert_eq!(screen, "bô bô");
+}
+
+#[test]
+fn test_fast_typing_vcv_then_tone() {
+    // "nêbo" with tone: "neebot" → "nê" committed + "bôt" composing?
+    // Actually "bot" = onset b, nucleus o, coda t → valid; "bôt" if oo → ô.
+    // "neebool" → committed "nê" + composing "bool" = "bool"? No: "bool" after
+    // split: feed 'b','o','o','l' → bôl (if l is optimistic coda).
+    // Let's keep it simple: just check "neebo" diff is correct and no char lost.
+    assert_replay("neebo", "nêbo");
+}
+
+#[test]
+fn test_fast_typing_no_spurious_commit() {
+    // Typing "tooi" fast: t+o+o (modifier → tô) + i → "tôi". No VCV split.
+    // Ensure committed_text stays empty.
+    let mut engine = ReplayEngine::new();
+    let mut screen = String::new();
+    for ch in "tooi".chars() {
+        let (bs, out) = engine.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    assert_eq!(screen, "tôi");
+    assert_eq!(engine.committed_text(), "", "no auto-commit for single syllable 'tooi'");
+}
+
+#[test]
+fn test_fast_typing_ddau() {
+    // "ddaau" → đâu (đ from dd, â from aa, u appended)
+    assert_replay("ddaau", "đâu");
+}

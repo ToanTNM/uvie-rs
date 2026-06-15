@@ -500,3 +500,26 @@ pub extern "C" fn uvie_replay_is_composing(engine: *const UvieReplayEngine) -> c
     })
     .unwrap_or(0)
 }
+
+/// Get the accumulated committed text (auto-committed syllables).
+/// Returns byte count of written string (excluding null terminator).
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_replay_committed_text(
+    engine: *const UvieReplayEngine,
+    out_buf: *mut c_char,
+    out_len: usize,
+) -> usize {
+    std::panic::catch_unwind(|| {
+        if engine.is_null() || out_buf.is_null() || out_len == 0 {
+            return 0;
+        }
+        let engine_ref = unsafe { &*engine };
+        if let Ok(e) = engine_ref.inner.lock() {
+            let result = e.committed_text().to_string();
+            write_output(&result, out_buf, out_len)
+        } else {
+            0
+        }
+    })
+    .unwrap_or(0)
+}

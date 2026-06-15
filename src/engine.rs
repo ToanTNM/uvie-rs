@@ -1,14 +1,61 @@
-use crate::buffers::{OutBuffer, RawBuffer, new_out_buffer, new_raw_buffer};
-use crate::modes::{IS_TONE_KEY, IS_VOWEL, InputMethod, Mode, ModeTrait, ResolverKind, mode_for, TelexMode, VniMode};
-use crate::phonetics;
-use crate::tone::{is_vowel_unicode, map_vowel_with_tone};
+//! Incremental stateful Vietnamese input engine.
+//!
+//! # Architecture
+//!
+//! Each keystroke is processed once and the engine keeps per-char state in a
+//! `SylBuf`. Validation runs against positive syllable pattern tables
+//! (`tables.rs`) on raw keystrokes — *before* any Unicode transform — so
+//! English words are automatically rejected without a blacklist.
+//!
+//! ## Flow per keystroke
+//!
+//! ```text
+//! feed(key)
+//!   1. classify(key) → Consonant | Vowel | Modifier | ToneKey | Boundary
+//!   2. handle_consonant / handle_vowel / handle_modifier / handle_tone
+//!   3. revalidate_word() — check raw onset/nucleus/coda against tables.rs
+//!        invalid? → mark_all_literal() (English passthrough)
+//!   4. render out_buf from SylBuf
+//! ```
+//!
+//! ## Key invariants
+//!
+//! - `raw[..raw_len]` always equals the original keystrokes, so fallback to
+//!   literal output is always available.
+//! - Tone placement is driven by `tables::nucleus_tone_target` — no positional
+//!   heuristics. This correctly handles `iê`, `uyê`, `ươ`, `oa`, etc.
+//! - Modifier "bubbling" (free-style: `tieengs` → `tiếng`) is handled by the
+//!   raw-scan approach in `handle_modifier`: the modifier key searches backward
+//!   for its target vowel, skipping over other vowels and glides that already
+//!   form a legal sequence.
+
+use crate::buffers::{OutBuffer, new_out_buffer};
+use crate::modes::{IS_MODIFIER, IS_TONE_KEY, IS_VOWEL, InputMethod, Mode, mode_for};
+use crate::syllable::{F_CAPS, F_CIRCUMFLEX, F_HORN, F_LITERAL, F_TONE_SET, Syl, SylBuf};
+use crate::tables::{
+    is_legal_coda, is_legal_nucleus, is_legal_onset, nucleus_tone_target, onset_is_gi,
+    onset_is_qu, tone_allowed_for_coda,
+};
+
+
+// ---------------------------------------------------------------------------
+// Public engine struct
+// ---------------------------------------------------------------------------
 
 pub struct UltraFastViEngine {
-    raw_buffer: RawBuffer,
-    out_buffer: OutBuffer,
+    /// Per-char buffer for the current composing word.
+    buf: SylBuf,
+    /// Raw keystroke snapshot. `raw[i]` == lowercased byte of the i-th key.
+    raw: [u8; 24],
+    raw_len: usize,
+    /// Rendered output of the current composing word.
+    out_buf: OutBuffer,
+    /// Accumulated committed text (prior complete words + boundary chars).
     committed: OutBuffer,
+    /// Input method — determines classifier and tone tables.
     input_method: InputMethod,
     mode: &'static Mode,
+    /// Engine configuration flags.
     enable_quick_start: bool,
     enable_quick_telex: bool,
     enable_modern_orthography: bool,
@@ -18,8 +65,10 @@ impl UltraFastViEngine {
     pub fn new() -> Self {
         let input_method = InputMethod::Telex;
         Self {
-            raw_buffer: new_raw_buffer(),
-            out_buffer: new_out_buffer(),
+            buf: SylBuf::new(),
+            raw: [0u8; 24],
+            raw_len: 0,
+            out_buf: new_out_buffer(),
             committed: new_out_buffer(),
             input_method,
             mode: mode_for(input_method),
@@ -29,602 +78,1112 @@ impl UltraFastViEngine {
         }
     }
 
+    // ------------------------------------------------------------------
+    // Configuration accessors
+    // ------------------------------------------------------------------
+
     pub fn set_quick_start(&mut self, enabled: bool) {
         self.enable_quick_start = enabled;
     }
-
-    pub fn quick_start(&self) -> bool {
-        self.enable_quick_start
-    }
+    pub fn quick_start(&self) -> bool { self.enable_quick_start }
 
     pub fn set_quick_telex(&mut self, enabled: bool) {
         self.enable_quick_telex = enabled;
     }
-
-    pub fn quick_telex(&self) -> bool {
-        self.enable_quick_telex
-    }
+    pub fn quick_telex(&self) -> bool { self.enable_quick_telex }
 
     pub fn set_modern_orthography(&mut self, enabled: bool) {
         self.enable_modern_orthography = enabled;
     }
-
-    pub fn modern_orthography(&self) -> bool {
-        self.enable_modern_orthography
-    }
-
-    pub fn clear(&mut self) {
-        self.raw_buffer.clear();
-        self.out_buffer.clear();
-        self.committed.clear();
-    }
-
-    /// Finalizes the current composing text into the committed buffer,
-    /// then clears the composing state.
-    pub fn commit(&mut self) {
-        let _ = self.committed.push_str(&self.out_buffer);
-        self.raw_buffer.clear();
-        self.out_buffer.clear();
-    }
+    pub fn modern_orthography(&self) -> bool { self.enable_modern_orthography }
 
     pub fn set_input_method(&mut self, method: InputMethod) {
         self.input_method = method;
         self.mode = mode_for(method);
     }
+    pub fn input_method(&self) -> InputMethod { self.input_method }
 
-    pub fn input_method(&self) -> InputMethod {
-        self.input_method
+    // ------------------------------------------------------------------
+    // State queries
+    // ------------------------------------------------------------------
+
+    pub fn is_empty(&self) -> bool {
+        self.buf.is_empty() && self.committed.is_empty()
     }
 
+    pub fn is_composing(&self) -> bool { !self.buf.is_empty() }
+
+    pub fn current_composing(&self) -> &str { &self.out_buf }
+
+    /// Returns the classify flags for a raw byte in the current input mode.
+    /// Used by ReplayEngine helpers to check if a char is a tone key.
+    #[inline]
+    pub fn mode_classify(&self, b: u8) -> u8 {
+        self.mode.classify[b as usize]
+    }
+
+    pub fn committed_text(&self) -> &str { &self.committed }
+
+    #[cfg(feature = "std")]
+    pub fn current_output(&self) -> String {
+        let mut s = String::with_capacity(self.committed.len() + self.out_buf.len());
+        s.push_str(&self.committed);
+        s.push_str(&self.out_buf);
+        s
+    }
+
+    // ------------------------------------------------------------------
+    // Lifecycle
+    // ------------------------------------------------------------------
+
+    pub fn clear(&mut self) {
+        self.buf.clear();
+        self.raw_len = 0;
+        self.out_buf.clear();
+        self.committed.clear();
+    }
+
+    /// Finalise the composing word into `committed` and reset composing state.
+    pub fn commit(&mut self) {
+        self.render_out_buf();
+        let _ = self.committed.push_str(&self.out_buf);
+        self.buf.clear();
+        self.raw_len = 0;
+        self.out_buf.clear();
+    }
+
+    /// Delete the last typed key (backspace). Returns the new composing text.
     pub fn backspace(&mut self) -> &str {
-        if !self.raw_buffer.is_empty() {
-            self.raw_buffer.pop();
-            return self.render_str();
+        if self.raw_len > 0 {
+            // Decrement raw_len and replay buf from scratch. We can't just
+            // buf.pop() because modifier keys may map 2 raw bytes to 1 buf entry
+            // (e.g. "oo"→"ô": raw_len=2, buf=[ô]; backspace should give "o" not "").
+            self.raw_len -= 1;
+            let target_len = self.raw_len;
+            self.buf.clear();
+            self.raw_len = 0;
+            for i in 0..target_len {
+                let b = self.raw[i];
+                self.raw[self.raw_len] = b;
+                self.raw_len += 1;
+                self.process_key(b, false);
+            }
+            self.render_out_buf();
+            return &self.out_buf;
         }
         if !self.committed.is_empty() {
             self.committed.pop();
         }
-        self.out_buffer.clear();
-        &self.out_buffer
+        self.out_buf.clear();
+        &self.out_buf
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.raw_buffer.is_empty() && self.committed.is_empty()
-    }
+    // ------------------------------------------------------------------
+    // Core feed method
+    // ------------------------------------------------------------------
 
-    /// Returns true when there is an active word being composed.
-    pub fn is_composing(&self) -> bool {
-        !self.raw_buffer.is_empty()
-    }
-
-    /// Returns only the current composing text (the word being typed).
-    pub fn current_composing(&self) -> &str {
-        &self.out_buffer
-    }
-
-    /// Returns all text that has already been committed.
-    pub fn committed_text(&self) -> &str {
-        &self.committed
-    }
-
-    /// Returns the full text: committed + current composing.
-    #[cfg(feature = "std")]
-    pub fn current_output(&self) -> String {
-        let mut result = String::with_capacity(self.committed.len() + self.out_buffer.len());
-        result.push_str(&self.committed);
-        result.push_str(&self.out_buffer);
-        result
-    }
-
+    /// Feed one character. Returns the current composing text (not including
+    /// committed text). Whitespace commits the current word.
     pub fn feed(&mut self, key: char) -> &str {
         if key.is_whitespace() {
-            self.render_str();
-            let _ = self.committed.push_str(&self.out_buffer);
-            self.raw_buffer.clear();
-            self.out_buffer.clear();
+            // Commit composing word, then append the whitespace to committed.
+            self.render_out_buf();
+            let _ = self.committed.push_str(&self.out_buf);
+            self.buf.clear();
+            self.raw_len = 0;
+            self.out_buf.clear();
             let _ = self.committed.push(key);
-            return &self.out_buffer;
+            return &self.out_buf;
         }
+
         let lower = key.to_ascii_lowercase();
+
+        // Apply quick-start / quick-telex expansions (these push to raw buffer
+        // before classification, so classification sees the expanded sequence).
+        let caps = key != lower;
+
         if self.enable_quick_start {
             match lower {
-                'j' => { let _ = self.raw_buffer.push('g'); let _ = self.raw_buffer.push('i'); }
-                'f' => { let _ = self.raw_buffer.push('p'); let _ = self.raw_buffer.push('h'); }
-                'w' => { let _ = self.raw_buffer.push('q'); let _ = self.raw_buffer.push('u'); }
-                _ => { let _ = self.raw_buffer.push(lower); }
+                'j' => { self.push_raw_key(b'g', false); self.push_raw_key(b'i', false); }
+                'f' => { self.push_raw_key(b'p', false); self.push_raw_key(b'h', false); }
+                'w' => { self.push_raw_key(b'q', false); self.push_raw_key(b'u', false); }
+                _ => { self.push_raw_key(lower as u8, caps); }
             }
-        } else if self.enable_quick_telex {
-            let expanded = match lower {
-                'c' => Some(['c', 'h']),
-                'g' => Some(['g', 'i']),
-                'k' => Some(['k', 'h']),
-                'n' => Some(['n', 'g']),
-                'q' => Some(['q', 'u']),
-                'p' => Some(['p', 'h']),
-                't' => Some(['t', 'h']),
+        } else if self.enable_quick_telex && self.raw_len > 0 {
+            // Quick-telex: double a single-consonant to expand it.
+            let prev = self.raw[self.raw_len - 1];
+            let expansion: Option<[u8; 2]> = match lower {
+                'c' => Some([b'c', b'h']),
+                'g' => Some([b'g', b'i']),
+                'k' => Some([b'k', b'h']),
+                'n' => Some([b'n', b'g']),
+                'q' => Some([b'q', b'u']),
+                'p' => Some([b'p', b'h']),
+                't' => Some([b't', b'h']),
                 _ => None,
             };
-            if let Some(pair) = expanded {
-                let bytes = self.raw_buffer.as_bytes();
-                if !bytes.is_empty() && bytes[bytes.len() - 1] == lower as u8 {
-                    self.raw_buffer.pop();
-                    let _ = self.raw_buffer.push(pair[0]);
-                    let _ = self.raw_buffer.push(pair[1]);
+            if let Some(pair) = expansion {
+                if prev == lower as u8 {
+                    self.raw_len -= 1;
+                    self.buf.pop();
+                    self.push_raw_key(pair[0], false);
+                    self.push_raw_key(pair[1], false);
                 } else {
-                    let _ = self.raw_buffer.push(lower);
+                    self.push_raw_key(lower as u8, caps);
                 }
             } else {
-                let _ = self.raw_buffer.push(lower);
+                self.push_raw_key(lower as u8, caps);
             }
         } else {
-            let _ = self.raw_buffer.push(lower);
+            self.push_raw_key(lower as u8, caps);
         }
-        self.render_str()
+
+        self.render_out_buf();
+        &self.out_buf
     }
 
-    #[inline(always)]
-    fn render_str(&mut self) -> &str {
-        if self.raw_buffer.is_empty() {
-            self.out_buffer.clear();
-            return &self.out_buffer;
+    // ------------------------------------------------------------------
+    // Internal: push a raw key and process it
+    // ------------------------------------------------------------------
+
+    /// Push one raw key byte into the raw snapshot and process it into `buf`.
+    fn push_raw_key(&mut self, b: u8, caps: bool) {
+        if self.raw_len >= 24 {
+            // Buffer full — silently drop (shouldn't happen for Vietnamese syllables).
+            return;
         }
-
-        let bytes_all = self.raw_buffer.as_bytes();
-        let len = bytes_all.len();
-
-        // Filter tone + Toggling in one pass.
-        // Table lookups use get_unchecked (index is u8, tables are [u8; 256]).
-        // Lookahead bounds checks only run for tone keys (rare and predictable branch).
-        let mut toggled = [0u8; 40];
-        let mut t_len = 0usize;
-        let mut last_tone_char = 0u8;
-        let mut tone_cancelled = false;
-        let mut run_char: u8 = 0;
-        let mut run_count: u8 = 0;
-        let mut seen_mod: u8 = 0;
-        let mut need_mod_bubble = false;
-        let mut has_w = false;
-
-        let mut idx = 0usize;
-        while idx < len {
-            let b = unsafe { *bytes_all.get_unchecked(idx) };
-            let attr = unsafe { *self.mode.classify.get_unchecked(b as usize) };
-            let is_tone = (attr & IS_TONE_KEY) != 0;
-
-            if is_tone {
-                if idx == 0 {
-                    // Rule 1: First char is always literal
-                    unsafe { *toggled.get_unchecked_mut(t_len) = b; }
-                    t_len += 1;
-                    idx += 1;
-                    continue;
-                }
-
-                // Rule 2: 'r' after certain consonants forms a cluster
-                if b == b'r' {
-                    let prev = unsafe { *bytes_all.get_unchecked(idx - 1) };
-                    if matches!(prev, b't' | b'p' | b'f' | b'c' | b'b' | b'd' | b'g' | b'k') {
-                        unsafe { *toggled.get_unchecked_mut(t_len) = b; }
-                        t_len += 1;
-                        idx += 1;
-                        continue;
-                    }
-                }
-
-                // Double tone key cancellation
-                if b == last_tone_char {
-                    unsafe { *toggled.get_unchecked_mut(t_len) = b; }
-                    t_len += 1;
-                    last_tone_char = 0;
-                    tone_cancelled = true;
-                    idx += 1;
-                    continue;
-                }
-
-                // If tone was previously cancelled, subsequent tone keys are literals
-                if tone_cancelled {
-                    unsafe { *toggled.get_unchecked_mut(t_len) = b; }
-                    t_len += 1;
-                    idx += 1;
-                    continue;
-                }
-
-                // Rule 3: tone key between vowels with trailing consonant → literal.
-                // Single branch covers both lookaheads; tone keys are rare so branch is predictable.
-                if idx + 2 < len {
-                    let next = unsafe { *bytes_all.get_unchecked(idx + 1) };
-                    let next_attr = unsafe { *self.mode.classify.get_unchecked(next as usize) };
-                    if (next_attr & IS_VOWEL) != 0 {
-                        let after_next = unsafe { *bytes_all.get_unchecked(idx + 2) };
-                        let after_next_attr = unsafe { *self.mode.classify.get_unchecked(after_next as usize) };
-                        if (after_next_attr & IS_VOWEL) == 0 {
-                            unsafe { *toggled.get_unchecked_mut(t_len) = b; }
-                            t_len += 1;
-                            idx += 1;
-                            continue;
-                        }
-                    }
-                }
-
-                last_tone_char = b;
-            } else {
-                // Fused toggling: detect triple-repeat
-                if b == run_char {
-                    run_count += 1;
-                    if run_count == 3 && matches!(b, b'a' | b'e' | b'o' | b'd') {
-                        t_len -= 1;
-                        run_count = 1;
-                        idx += 1;
-                        continue;
-                    }
-                } else {
-                    run_char = b;
-                    run_count = 1;
-                }
-
-                let is_adjacent = b == run_char && run_count == 2;
-                match b {
-                    b'a' => { let bit = 1u8 << 0; if seen_mod & bit != 0 && !is_adjacent { need_mod_bubble = true; } seen_mod |= bit; }
-                    b'e' => { let bit = 1u8 << 1; if seen_mod & bit != 0 && !is_adjacent { need_mod_bubble = true; } seen_mod |= bit; }
-                    b'o' => { let bit = 1u8 << 2; if seen_mod & bit != 0 && !is_adjacent { need_mod_bubble = true; } seen_mod |= bit; }
-                    b'd' => { let bit = 1u8 << 3; if seen_mod & bit != 0 && !is_adjacent { need_mod_bubble = true; } seen_mod |= bit; }
-                    b'w' => { has_w = true; }
-                    _ => {}
-                }
-
-                unsafe { *toggled.get_unchecked_mut(t_len) = b; }
-                t_len += 1;
-            }
-            idx += 1;
-        }
-
-        // Fused modifier + w bubbling pass
-        const W_LITERAL: u8 = 0x01;
-        let need_w_pass = has_w && self.mode.enable_w_bubbling;
-        {
-            if need_mod_bubble || need_w_pass {
-                let mut buf = [0u8; 40];
-                let mut b_len = 0usize;
-
-                // Phase 1: modifier bubbling + double-w collapse
-                let mut last_pos: [u8; 4] = [0xFF; 4];
-                let mut wi = 0usize;
-                while wi < t_len {
-                    let c = unsafe { *toggled.get_unchecked(wi) };
-
-                    // Double-w cancellation
-                    if c == b'w' && self.mode.enable_w_bubbling {
-                        if wi + 1 < t_len {
-                            let next_c = unsafe { *toggled.get_unchecked(wi + 1) };
-                            if next_c == b'w' {
-                                unsafe { *buf.get_unchecked_mut(b_len) = W_LITERAL; }
-                                b_len += 1;
-                                wi += 2;
-                                continue;
-                            }
-                        }
-                        unsafe { *buf.get_unchecked_mut(b_len) = c; }
-                        b_len += 1;
-                        wi += 1;
-                        continue;
-                    }
-
-                    // Modifier bubbling for a,e,o,d
-                    let slot = match c {
-                        b'a' => Some(0),
-                        b'e' => Some(1),
-                        b'o' => Some(2),
-                        b'd' => Some(3),
-                        _ => None,
-                    };
-
-                    if let Some(s) = slot {
-                        if last_pos[s] != 0xFF {
-                            let insert_at = last_pos[s] as usize + 1;
-                            buf.copy_within(insert_at..b_len, insert_at + 1);
-                            unsafe { *buf.get_unchecked_mut(insert_at) = c; }
-                            b_len += 1;
-                            last_pos[s] = 0xFF;
-                            for p in last_pos.iter_mut() {
-                                if *p != 0xFF && *p as usize >= insert_at {
-                                    *p += 1;
-                                }
-                            }
-                        } else {
-                            last_pos[s] = b_len as u8;
-                            unsafe { *buf.get_unchecked_mut(b_len) = c; }
-                            b_len += 1;
-                        }
-                    } else {
-                        unsafe { *buf.get_unchecked_mut(b_len) = c; }
-                        b_len += 1;
-                    }
-                    wi += 1;
-                }
-
-                // Phase 2: w-bubbling in-place
-                if need_w_pass {
-                    let mut out = [0u8; 40];
-                    let mut o_len = 0usize;
-                    let mut last_target_pos: Option<usize> = None;
-
-                    for k in 0..b_len {
-                        let c = unsafe { *buf.get_unchecked(k) };
-                        if c == b'w' {
-                            if let Some(tp) = last_target_pos {
-                                let insert_at = tp + 1;
-                                if insert_at < o_len {
-                                    out.copy_within(insert_at..o_len, insert_at + 1);
-                                }
-                                unsafe { *out.get_unchecked_mut(insert_at) = b'w'; }
-                                o_len += 1;
-                                last_target_pos = Some(insert_at);
-                            } else {
-                                unsafe { *out.get_unchecked_mut(o_len) = b'w'; }
-                                o_len += 1;
-                            }
-                        } else {
-                            unsafe { *out.get_unchecked_mut(o_len) = c; }
-                            o_len += 1;
-                            if unsafe { *self.mode.w_target.get_unchecked(c as usize) } {
-                                last_target_pos = Some(o_len - 1);
-                            }
-                        }
-                    }
-                    toggled = out;
-                    t_len = o_len;
-                } else {
-                    toggled = buf;
-                    t_len = b_len;
-                }
-            }
-        }
-
-        // Resolve mode rules & Build Char Buffer
-        // Pad toggled with sentinel so resolver loop needs no Option/branching.
-        unsafe { *toggled.get_unchecked_mut(t_len) = 0; }
-
-        let mut char_buf = ['\0'; 32];
-        let mut c_len = 0usize;
-        let mut vowel_mask = 0u16;
-
-        let mut i = 0usize;
-        while i < t_len {
-            let curr = unsafe { *toggled.get_unchecked(i) };
-
-            // W_LITERAL sentinel: output literal 'w', skip resolver
-            if curr == W_LITERAL {
-                char_buf[c_len] = 'w';
-                c_len += 1;
-                i += 1;
-                continue;
-            }
-
-            // SAFETY: toggled is padded with sentinel at t_len, so toggled[i+1] is always valid.
-            let next = unsafe { *toggled.get_unchecked(i + 1) };
-
-            // Static dispatch: compiler inlines the specific resolver per enum arm.
-            let (mut c, consumed) = match self.mode.resolver {
-                ResolverKind::Telex => TelexMode::resolve(curr, next),
-                ResolverKind::Vni => VniMode::resolve(curr, next),
-            };
-
-            // uow -> ươ
-            if curr == b'u' && !consumed {
-                if next == b'o' {
-                    if i + 2 < t_len && unsafe { *toggled.get_unchecked(i + 2) } == b'w' {
-                        let is_qu = if i > 0 {
-                            let prev = unsafe { *toggled.get_unchecked(i - 1) };
-                            prev == b'q' || prev == b'Q'
-                        } else {
-                            false
-                        };
-                        if !is_qu {
-                            c = 'ư';
-                        }
-                    }
-                }
-            }
-
-            if is_vowel_unicode(c) {
-                vowel_mask |= 1 << c_len;
-            }
-
-            char_buf[c_len] = c;
-            c_len += 1;
-            i += if consumed { 2 } else { 1 };
-        }
-
-        // If no vowels in resolved output and tone keys were stripped, fall back to raw
-        if vowel_mask == 0 && last_tone_char != 0 && !tone_cancelled {
-            let has_modified = char_buf[..c_len].iter().any(|&c| !c.is_ascii());
-            if !has_modified {
-                self.out_buffer.clear();
-                let _ = self.out_buffer.push_str(&self.raw_buffer);
-                return &self.out_buffer;
-            }
-        }
-
-        // Validation
-        if self.is_invalid_vietnamese_chars(&char_buf[..c_len], vowel_mask, tone_cancelled) {
-            self.out_buffer.clear();
-            let _ = self.out_buffer.push_str(&self.raw_buffer);
-            return &self.out_buffer;
-        }
-
-        // Tone restriction: ch/t coda cannot have hoi (3) or nga (4)
-        if last_tone_char > 0 && vowel_mask != 0 {
-            let tone_id = unsafe { *self.mode.tone.get_unchecked(last_tone_char as usize) };
-            let last_vowel_pos = 15 - (vowel_mask.reverse_bits().trailing_zeros() as usize);
-            if phonetics::is_tone_restricted(&char_buf[..c_len], last_vowel_pos, tone_id) {
-                self.out_buffer.clear();
-                let _ = self.out_buffer.push_str(&self.raw_buffer);
-                return &self.out_buffer;
-            }
-            self.apply_tone_in_place(&mut char_buf[..c_len], vowel_mask, tone_id);
-        }
-
-        self.out_buffer.clear();
-        for &c in &char_buf[..c_len] {
-            let _ = self.out_buffer.push(c);
-        }
-
-        &self.out_buffer
+        self.raw[self.raw_len] = b;
+        self.raw_len += 1;
+        self.process_key(b, caps);
     }
 
-    fn is_invalid_vietnamese_chars(&self, chars: &[char], vowel_mask: u16, tone_cancelled: bool) -> bool {
-        if vowel_mask == 0 {
-            let has_non_ascii = chars.iter().any(|&c| !c.is_ascii());
-            // Allow up to 3 consonants without a vowel — user may still be typing
-            // (max Vietnamese onset length is 3: "ngh").
-            return chars.len() > 3 && !has_non_ascii;
+    /// Classify and handle one byte. Updates `self.buf` in-place.
+    fn process_key(&mut self, b: u8, caps: bool) {
+        let attr = self.mode.classify[b as usize];
+
+        if attr & IS_TONE_KEY != 0 {
+            self.handle_tone_key(b, caps);
+        } else if attr & IS_MODIFIER != 0 {
+            self.handle_modifier(b, caps);
+        } else if attr & IS_VOWEL != 0 {
+            self.handle_vowel(b, caps);
+        } else {
+            // Consonant or other literal.
+            self.handle_consonant(b, caps);
         }
+    }
 
-        let len = chars.len();
+    // ------------------------------------------------------------------
+    // Handlers
+    // ------------------------------------------------------------------
 
-        // Check "ou" adjacency
-        let mut mask_o: u32 = 0;
-        let mut mask_u: u32 = 0;
-        let mut idx: u32 = 0;
-        for &c in chars.iter() {
-            if idx >= 32 {
-                break;
+    fn handle_consonant(&mut self, b: u8, caps: bool) {
+        self.buf.push(Syl::literal(b, caps));
+    }
+
+    fn handle_vowel(&mut self, b: u8, caps: bool) {
+        // In Telex, 'w' acts as a standalone vowel ư when not following a/o/u.
+        // In VNI, 'w' is not a vowel key.
+        // For the raw VNI buffer 'w' is classified as modifier there, so this
+        // branch only fires for a/e/i/o/u/y (always vowels).
+
+        // Free-style modifier support: if there is already a vowel in the buffer
+        // with the same base, try to apply the modifier (e.g. second 'e' → ê,
+        // second 'a' → â, second 'o' → ô).
+        // This handles adjacent (ee, aa, oo) AND non-adjacent (tieengs) cases.
+
+        // Check for double-vowel modifier (aa→â, ee→ê, oo→ô).
+        if matches!(b, b'a' | b'e' | b'o') {
+            if let Some(target_idx) = self.find_modifier_target_for_double_vowel(b) {
+                // Apply circumflex to the target vowel.
+                let syl = self.buf.get(target_idx).clone();
+                // Triple-cancel: if target already has circumflex, revert to literal.
+                if syl.flags & F_CIRCUMFLEX != 0 {
+                    // Only triple-cancel if the word is currently valid Vietnamese.
+                    // For English words (already in passthrough), don't cancel —
+                    // just push the vowel as a plain entry (fall through to push below).
+                    // e.g. "banana": the third 'a' finds 'â' but the word is already
+                    // invalid (passthrough), so we skip triple-cancel.
+                    if self.is_valid_vietnamese() {
+                        // 3rd same-char in valid Vietnamese: revert modifier and
+                        // mark as passthrough. Decrement raw_len so the output
+                        // reflects 2 chars (e.g. "aaa" → "aa").
+                        let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
+                        self.buf.set(target_idx, reverted);
+                        self.buf.push(Syl::literal(b, caps));
+                        if self.raw_len > 0 { self.raw_len -= 1; }
+                        self.mark_all_literal();
+                        return;
+                    }
+                    // Already invalid — skip modifier, fall through to plain push.
+                } else {
+                    let updated = syl.with_circumflex();
+                    self.buf.set(target_idx, updated);
+                    // The modifier key itself is consumed (not added as a separate entry).
+                    // Re-place tone onto the nucleus after modifier change.
+                    self.reapply_tone_after_nucleus_change();
+                    return;
+                }
             }
-            if c == 'o' {
-                mask_o |= 1u32 << idx;
-            } else if c == 'u' {
-                mask_u |= 1u32 << idx;
+        }
+
+        // Plain vowel — just push.
+        self.buf.push(Syl::literal(b, caps));
+        // Reapply any pending tone to the new nucleus.
+        self.reapply_tone_after_nucleus_change();
+    }
+
+    fn handle_modifier(&mut self, b: u8, caps: bool) {
+        // Telex modifiers: 'w' (→ ă/ơ/ư/đ context-dep) and 'd' (→ đ).
+        // VNI modifiers: digit keys 6/7/8/9 (modifier class in VNI classify table).
+        // Note: in the VNI table, digits 6/7/8/9 are IS_MODIFIER.
+        //
+        // Telex 'w' targets:
+        //   - 'a' → ă (aw)
+        //   - 'o' → ơ (ow)
+        //   - 'u' → ư (uw)
+        //   - standalone w (no prior a/o/u) → ư (used as vowel onset ư)
+        //   - 'u' after 'q' (glide) → skip (qu stays qu)
+        //
+        // Telex 'd':
+        //   - 'd' after 'd' → đ (dd)
+        //   - standalone 'd' → consonant 'd'
+        //
+        // VNI:
+        //   6 → â/ê/ô (circumflex on most-recent matching vowel)
+        //   7 → ơ/ư (horn on o/u)
+        //   8 → ă (horn on a)
+        //   9 → đ (applied to most-recent d)
+
+        match b {
+            b'w' => self.handle_telex_w(caps),
+            b'd' => self.handle_telex_d(caps),
+            b'6' => self.handle_vni_6(caps),
+            b'7' => self.handle_vni_7(caps),
+            b'8' => self.handle_vni_8(caps),
+            b'9' => self.handle_vni_9(caps),
+            _ => {
+                // Unknown modifier — treat as literal.
+                self.buf.push(Syl::literal(b, caps));
             }
-            idx += 1;
         }
-        if (mask_o & (mask_u >> 1)) != 0 {
-            return true;
-        }
+    }
 
-        // Check leading consonant cluster (onset)
-        let first_vowel_pos = vowel_mask.trailing_zeros() as usize;
-        if !phonetics::is_valid_onset(chars, first_vowel_pos) {
-            return true;
-        }
+    fn handle_telex_w(&mut self, caps: bool) {
+        // Telex 'w' modifier:
+        //   - First 'w' after a/o/u: apply horn (aw→ă, ow→ơ, uw→ư).
+        //   - Second 'w' (double-w): cancel the horn, push 'w' as a plain char.
+        //     e.g. showw → sh + o + w(applied) + w(cancel) → raw "showw" but
+        //     output "show" (cancel undoes horn, raw_len decremented, raw becomes "show").
+        //   - Standalone 'w' at onset: becomes ư vowel.
+        //   - 'w' with no matching target: literal 'w'.
 
-        let last_vowel_pos = 15 - (vowel_mask.reverse_bits().trailing_zeros() as usize);
+        let n = self.buf.len();
 
-        // Reject words starting with a vowel whose first coda is invalid.
-        // e.g. "êngin" → êng is not a valid Vietnamese syllable.
-        if first_vowel_pos == 0 {
-            let v = chars[0];
-            let mut next_vowel_pos = len;
-            for i in 1..len {
-                if (vowel_mask >> i) & 1 == 1 {
-                    next_vowel_pos = i;
+        for i in (0..n).rev() {
+            let syl = self.buf.get(i);
+            match syl.base {
+                b'u' => {
+                    if self.is_u_glide(i) { break; }
+                    if syl.flags & F_HORN != 0 {
+                        // Double-w cancel: revert horn. The second 'w' (cancel)
+                        // is removed from raw; the first 'w' stays. Add a plain
+                        // 'w' entry to buf so nucleus becomes invalid → raw passthrough.
+                        let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
+                        self.buf.set(i, reverted);
+                        if self.raw_len > 0 { self.raw_len -= 1; }
+                        self.buf.push(Syl::literal(b'w', caps));
+                        self.reapply_tone_after_nucleus_change();
+                        return;
+                    }
+                    let updated = self.buf.get(i).clone().with_horn();
+                    self.buf.set(i, updated);
+                    self.reapply_tone_after_nucleus_change();
+                    return;
+                }
+                b'o' => {
+                    if syl.flags & F_HORN != 0 {
+                        let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
+                        self.buf.set(i, reverted);
+                        if self.raw_len > 0 { self.raw_len -= 1; }
+                        self.buf.push(Syl::literal(b'w', caps));
+                        // Also revert co-modified u→ư if present.
+                        if i > 0 {
+                            let prev = self.buf.get(i - 1);
+                            if prev.base == b'u' && prev.flags & F_HORN != 0 {
+                                let reverted_u = Syl::literal(b'u', prev.flags & F_CAPS != 0);
+                                self.buf.set(i - 1, reverted_u);
+                            }
+                        }
+                        self.reapply_tone_after_nucleus_change();
+                        return;
+                    }
+                    let updated = self.buf.get(i).clone().with_horn();
+                    self.buf.set(i, updated);
+                    // Co-modification: if `u` immediately precedes this `o` in
+                    // the nucleus, promote it to `ư` (uo → ươ phonetic rule).
+                    if i > 0 {
+                        let prev = self.buf.get(i - 1);
+                        if prev.base == b'u' && prev.flags == 0 && !self.is_u_glide(i - 1) {
+                            let promoted = prev.clone().with_horn();
+                            self.buf.set(i - 1, promoted);
+                        }
+                    }
+                    self.reapply_tone_after_nucleus_change();
+                    return;
+                }
+                b'a' => {
+                    if syl.flags & F_CIRCUMFLEX != 0 { continue; }
+                    if syl.flags & F_HORN != 0 {
+                        let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
+                        self.buf.set(i, reverted);
+                        if self.raw_len > 0 { self.raw_len -= 1; }
+                        self.buf.push(Syl::literal(b'w', caps));
+                        self.reapply_tone_after_nucleus_change();
+                        return;
+                    }
+                    let updated = self.buf.get(i).clone().with_horn();
+                    self.buf.set(i, updated);
+                    self.reapply_tone_after_nucleus_change();
+                    return;
+                }
+                b'd' => {
+                    // 'w' doesn't target 'd' — stop scan.
                     break;
                 }
-            }
-            let coda_len = next_vowel_pos.saturating_sub(1);
-            if coda_len == 2 && chars[1] == 'n' && chars[2] == 'g' {
-                if matches!(v, 'ê' | 'ơ' | 'i' | 'y') {
-                    return true;
+                _ if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 => {
+                    // Hit a non-vowel, non-d consonant — stop.
+                    break;
                 }
+                _ => continue,
             }
         }
 
-        if tone_cancelled {
-            return false;
+        // No match — standalone 'w' becomes ư only at the start of the nucleus
+        // (all preceding entries are onset consonants, or buffer is empty).
+        let onset_len = self.onset_len();
+        if onset_len == n {
+            // Onset-only context: 'w' starts the nucleus as ư.
+            let mut syl = Syl::literal(b'w', caps);
+            syl.flags |= F_HORN;
+            syl.out = 'ư';
+            self.buf.push(syl);
+            self.reapply_tone_after_nucleus_change();
+        } else {
+            // No valid target — 'w' is a literal.
+            self.buf.push(Syl::literal(b'w', caps));
         }
-
-        // Check mid-word consonant clusters: between any two vowels, at most 2
-        // consecutive consonants are allowed (coda of prev syllable + onset of next).
-        {
-            let mut consec_consonants = 0u8;
-            let mut seen_vowel = false;
-            for i in 0..len {
-                let is_v = (vowel_mask >> i) & 1 == 1;
-                if is_v {
-                    consec_consonants = 0;
-                    seen_vowel = true;
-                } else if seen_vowel {
-                    consec_consonants += 1;
-                    if consec_consonants > 2 {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        // Check trailing consonant cluster (coda)
-        if phonetics::is_invalid_coda(chars, last_vowel_pos) {
-            return true;
-        }
-
-        false
     }
 
-    fn apply_tone_in_place(&self, chars: &mut [char], mask: u16, tone: u8) {
-        let count = mask.count_ones();
-        if count == 0 {
+    fn handle_telex_d(&mut self, caps: bool) {
+        // 'd' is classified IS_MODIFIER in Telex because 'dd' → 'đ'.
+        // Free-style bubbling: the second 'd' can bubble back past vowels/consonants
+        // to find the first 'd' in the onset and transform it to 'đ'.
+        // Triple-cancel: 3rd 'd' after 'đ' → revert to plain "dd" (like "aaa"→"aa").
+
+        let n = self.buf.len();
+
+        // Scan backward for a 'd' entry.
+        for i in (0..n).rev() {
+            let s = self.buf.get(i);
+            if s.base == b'd' && s.flags & F_HORN != 0 {
+                // Found an existing 'đ'. Triple-cancel — but only if the word is
+                // currently valid Vietnamese. For English words like "added" the
+                // đ from "dd" is already in passthrough mode; don't triple-cancel.
+                if self.is_valid_vietnamese() {
+                    let reverted = Syl::literal(b'd', s.flags & F_CAPS != 0);
+                    self.buf.set(i, reverted);
+                    self.buf.push(Syl::literal(b'd', caps));
+                    if self.raw_len > 0 { self.raw_len -= 1; }
+                    self.mark_all_literal();
+                    return;
+                }
+                // Already invalid — skip triple-cancel, fall through to plain push.
+                break;
+            }
+            if s.base == b'd' && s.flags & F_LITERAL == 0 && s.flags & F_HORN == 0 {
+                // Found a non-đ 'd'. Only transform to 'đ' if it's in the onset
+                // (before any vowel). A 'd' after a vowel is in coda position and
+                // transforming it would create an illegal đ coda (e.g. "added" → "ađed").
+                let is_in_onset = (0..i).all(|j| {
+                    let sj = self.buf.get(j);
+                    self.mode.classify[sj.base as usize] & IS_VOWEL == 0
+                        && sj.base != b'w'
+                });
+                if !is_in_onset {
+                    // Skip — d is after a vowel, can't be đ onset.
+                    break;
+                }
+                let new_syl = Syl {
+                    base: b'd',
+                    out: if s.flags & F_CAPS != 0 { 'Đ' } else { 'đ' },
+                    tone: 0,
+                    flags: s.flags | F_HORN,
+                };
+                self.buf.set(i, new_syl);
+                // 'd' consumed as modifier.
+                return;
+            }
+        }
+
+        // No match — push as plain consonant.
+        self.buf.push(Syl::literal(b'd', caps));
+    }
+
+    fn handle_vni_6(&mut self, _caps: bool) {
+        // VNI '6': apply circumflex to most-recent a/e/o.
+        for i in (0..self.buf.len()).rev() {
+            let syl = self.buf.get(i);
+            if matches!(syl.base, b'a' | b'e' | b'o') && syl.flags & F_LITERAL == 0 {
+                if syl.flags & F_CIRCUMFLEX != 0 {
+                    // Double-6 cancel: revert.
+                    let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
+                    self.buf.set(i, reverted);
+                } else {
+                    let updated = self.buf.get(i).clone().with_circumflex();
+                    self.buf.set(i, updated);
+                }
+                self.reapply_tone_after_nucleus_change();
+                return;
+            }
+            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 { break; }
+        }
+        // No target — push '6' literal.
+        self.buf.push(Syl::literal(b'6', false));
+    }
+
+    fn handle_vni_7(&mut self, _caps: bool) {
+        // VNI '7': apply horn to most-recent o or u (→ ơ or ư).
+        for i in (0..self.buf.len()).rev() {
+            let syl = self.buf.get(i);
+            if matches!(syl.base, b'o' | b'u') && syl.flags & F_LITERAL == 0 {
+                if syl.flags & F_HORN != 0 {
+                    let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
+                    self.buf.set(i, reverted);
+                } else {
+                    let updated = self.buf.get(i).clone().with_horn();
+                    self.buf.set(i, updated);
+                }
+                self.reapply_tone_after_nucleus_change();
+                return;
+            }
+            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 { break; }
+        }
+        self.buf.push(Syl::literal(b'7', false));
+    }
+
+    fn handle_vni_8(&mut self, _caps: bool) {
+        // VNI '8': apply horn (breve) to most-recent 'a' (→ ă).
+        for i in (0..self.buf.len()).rev() {
+            let syl = self.buf.get(i);
+            if syl.base == b'a' && syl.flags & F_LITERAL == 0 {
+                if syl.flags & F_HORN != 0 {
+                    let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
+                    self.buf.set(i, reverted);
+                } else {
+                    let updated = self.buf.get(i).clone().with_horn();
+                    self.buf.set(i, updated);
+                }
+                self.reapply_tone_after_nucleus_change();
+                return;
+            }
+            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 { break; }
+        }
+        self.buf.push(Syl::literal(b'8', false));
+    }
+
+    fn handle_vni_9(&mut self, _caps: bool) {
+        // VNI '9': apply đ to most-recent 'd'.
+        for i in (0..self.buf.len()).rev() {
+            let syl = self.buf.get(i);
+            if syl.base == b'd' && syl.flags & F_LITERAL == 0 {
+                if syl.flags & F_HORN != 0 {
+                    let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
+                    self.buf.set(i, reverted);
+                } else {
+                    let new_syl = Syl {
+                        base: b'd',
+                        out: if syl.flags & F_CAPS != 0 { 'Đ' } else { 'đ' },
+                        tone: 0,
+                        flags: syl.flags | F_HORN,
+                    };
+                    self.buf.set(i, new_syl);
+                }
+                return;
+            }
+            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 { break; }
+        }
+        self.buf.push(Syl::literal(b'9', false));
+    }
+
+    fn handle_tone_key(&mut self, b: u8, caps: bool) {
+        let tone_val = self.mode.tone[b as usize];
+
+        // Rule: first char is always literal (can't apply tone to empty nucleus).
+        let n = self.buf.len();
+        if n == 0 {
+            self.buf.push(Syl::literal(b, caps));
             return;
         }
 
-        let target_pos = match count {
-            1 => mask.trailing_zeros() as usize,
-            2 => {
-                let first = mask.trailing_zeros() as usize;
-                let second = (mask & !(1 << first)).trailing_zeros() as usize;
+        // Rule: 'r' after certain consonants (tr, pr, fr, …) is a consonant cluster.
+        if b == b'r' && n > 0 {
+            let prev = self.buf.get(n - 1).base;
+            if matches!(prev, b't' | b'p' | b'f' | b'c' | b'b' | b'd' | b'g' | b'k') {
+                self.buf.push(Syl::literal(b'r', caps));
+                return;
+            }
+        }
 
-                let f = chars.get(first).copied().unwrap_or('\0');
-                let sc = chars.get(second).copied().unwrap_or('\0');
+        // If the word is already invalid Vietnamese (passthrough mode), treat
+        // tone keys as plain consonants — no tone application, no double-cancel.
+        // This ensures English words like "stress" pass through intact.
+        if !self.is_valid_vietnamese() {
+            self.buf.push(Syl::consonant(b, caps));
+            return;
+        }
 
-                // Special case: ui/ưi (e.g. "túi", "gửi") place tone on the first vowel.
-                // Exception: in "qu" prefix, 'u' is a glide, so tone belongs to the following vowel.
-                let mut prefer_first = (f == 'u' || f == 'ư') && sc == 'i';
+        // Find tone carrier (nucleus position determined by tables).
+        let carrier = self.tone_carrier_idx();
 
-                // Modified/circumflex vowels paired with a plain vowel: tone on the modified vowel.
-                // e.g. ơi(mới), ôi(tối), êu(nếu), âu(đầu), ây(đấy), âo(cháo/nấo)
-                // Exception: ươ pair — tone goes on ơ (second), not ư.
-                let f_is_modified = matches!(f, 'ơ' | 'ô' | 'ê' | 'â' | 'ă');
-                let sc_is_plain = matches!(sc, 'a' | 'e' | 'i' | 'o' | 'u' | 'y');
-                if f_is_modified && sc_is_plain {
-                    prefer_first = true;
-                }
-
-                // Standard open pairs that often prefer tone on the first vowel.
-                let mut is_open_pair = (f == 'i' && (sc == 'a' || sc == 'u'))
-                    || (f == 'u' && (sc == 'a' || sc == 'e'))
-                    || (f == 'ư' && (sc == 'a' || sc == 'u'))
-                    || (f == 'a'
-                        && (sc == 'o' || sc == 'e' || sc == 'i' || sc == 'u' || sc == 'y'))
-                    || (f == 'e' && (sc == 'o' || sc == 'u'))
-                    || (f == 'o' && sc == 'i')
-                    || (f == 'â' && (sc == 'y' || sc == 'u'));
-
-                // Exception: "qu" and "gi" logic
-                if chars.len() >= 2 {
-                    let p0 = chars[0];
-                    let p1 = chars[1];
-
-                    if (p0 == 'q' || p0 == 'Q') && (p1 == 'u' || p1 == 'U') && first == 1 {
-                        is_open_pair = false;
-                        prefer_first = false;
-                    } else if (p0 == 'g' || p0 == 'G') && (p1 == 'i' || p1 == 'I') && first == 1 {
-                        is_open_pair = false;
-                        prefer_first = false;
-                    }
-                }
-
-                if prefer_first {
-                    first
-                } else if is_open_pair {
-                    let has_coda = (second + 1) < chars.len();
-                    if has_coda { second } else { first }
-                } else {
-                    second
+        if carrier.is_none() {
+            // No vowel in buffer — tone key cannot apply.
+            // Special case: if the entire buf is a modified consonant (e.g. đ from
+            // VNI d9 or Telex dd), swallow the tone key silently. This handles
+            // "d91" → "đ" in VNI where the '1' tone has no target.
+            let (_, ns, ne, _) = self.partition_syllable();
+            if ne <= ns {
+                // No nucleus at all. Check if onset has a đ (modified consonant).
+                let has_modified_consonant = (0..self.buf.len()).any(|i| {
+                    let s = self.buf.get(i);
+                    s.base == b'd' && s.flags & F_HORN != 0
+                });
+                if has_modified_consonant {
+                    // Swallow tone key for onset-only modified-consonant words (đ+tone).
+                    if self.raw_len > 0 { self.raw_len -= 1; }
+                    return;
                 }
             }
-            _ => (mask & !(1 << mask.trailing_zeros())).trailing_zeros() as usize,
-        };
+            self.buf.push(Syl::literal(b, caps));
+            return;
+        }
 
-        if let Some(target) = chars.get_mut(target_pos) {
-            *target = map_vowel_with_tone(*target, tone);
+        let carrier_idx = carrier.unwrap();
+
+        // Check existing tone on this carrier.
+        let existing = self.buf.get(carrier_idx);
+        let already_has_tone = existing.flags & F_TONE_SET != 0;
+
+        if already_has_tone && existing.tone == tone_val && existing.flags & F_LITERAL == 0 {
+            // Double-same-tone-key: cancel tone.
+            //
+            // The first tone key (byte `b`) was consumed into the carrier vowel's
+            // tone. The second (duplicate) `b` cancels it. After cancellation:
+            //   - Tone is removed from the carrier vowel.
+            //   - The first tone key `b` may become a plain coda consonant
+            //     (only if `b` is a legal coda — e.g. 's' is NOT a legal coda).
+            //   - raw_len decremented by 2: both keys consumed.
+            //   - If first key is a legal coda, it is re-pushed as a coda entry.
+            //
+            // "tess": t+e → té (via s) → +s → cancel → t+e+s(coda) = "tes".
+            //   First s is a legal coda for Vietnamese (no — but 'tes' is still
+            //   rendered as passthrough since 's' coda is invalid; raw→"tes").
+            // "stress" + ss: stré+s → cancel → stre (no coda), raw→"stress"? No.
+            //
+            // Correct semantics (matching old engine):
+            //   - Remove both occurrences of the tone key from raw (raw_len -= 2).
+            //   - Re-add the first key as a coda entry in buf so the word struct
+            //     reflects the correct syllable shape.
+            //   - Validation then decides if it's Vietnamese or passthrough.
+            let first_tone_b = b; // the duplicate key (= first key too)
+
+            let reverted = {
+                let s = self.buf.get(carrier_idx);
+                let mut new_s = *s;
+                new_s.flags &= !(F_TONE_SET);
+                new_s.tone = 0;
+                new_s.recompute_out();
+                new_s
+            };
+            self.buf.set(carrier_idx, reverted);
+
+            // Remove the second (duplicate) tone key from raw (it was consumed).
+            if self.raw_len > 0 { self.raw_len -= 1; }
+            // The first tone key becomes a plain coda consonant in buf.
+            self.buf.push(Syl::consonant(first_tone_b, caps));
+            return;
+        }
+
+        // Override: last tone key wins (sắc then huyền → huyền).
+        {
+            let s = self.buf.get_mut(carrier_idx);
+            s.tone = tone_val;
+            s.flags |= F_TONE_SET;
+            s.recompute_out();
         }
     }
+
+    // ------------------------------------------------------------------
+    // Tone carrier logic
+    // ------------------------------------------------------------------
+
+    /// Returns the index in `buf` of the vowel that should carry the tone,
+    /// based on `tables::nucleus_tone_target` and `qu`/`gi` glide rules.
+    ///
+    /// Returns `None` if there is no vowel in the buffer.
+    fn tone_carrier_idx(&self) -> Option<usize> {
+        let n = self.buf.len();
+
+        // Collect the nucleus: contiguous resolved-char vowels in the buffer,
+        // excluding onset consonants, glides (qu u, gi i), and coda consonants.
+        let (_onset_end, nucleus_start, nucleus_end, _coda_start) =
+            self.partition_syllable();
+
+        if nucleus_start >= nucleus_end {
+            return None; // no nucleus
+        }
+
+        let nucleus_len = nucleus_end - nucleus_start;
+
+        // Build nucleus using modifier-resolved chars WITHOUT tone (base_no_tone),
+        // because the tone-target table uses untoned vowels like 'â', 'ê', 'ơ'.
+        let mut nuc: [char; 3] = ['\0'; 3];
+        let take = nucleus_len.min(3);
+        for i in 0..take {
+            nuc[i] = self.buf.get(nucleus_start + i).base_no_tone();
+        }
+        let nuc_slice = &nuc[..take];
+
+        // qu/gi glide adjustment: after 'qu' the 'u' is a glide, not nucleus.
+        // After 'gi' the 'i' is a glide, not nucleus.
+        let onset_raw = self.onset_raw_slice();
+        let (eff_nucleus_start, eff_nuc_slice, tone_offset) =
+            if onset_is_qu(onset_raw) && nucleus_start < n && self.buf.get(nucleus_start).base == b'u' {
+                let eff_start = nucleus_start + 1;
+                if eff_start < nucleus_end {
+                    let eff_len = (nucleus_end - eff_start).min(3);
+                    let mut enuc = ['\0'; 3];
+                    for i in 0..eff_len { enuc[i] = self.buf.get(eff_start + i).base_no_tone(); }
+                    (eff_start, enuc, 0usize)
+                } else {
+                    (nucleus_start, { let mut a = ['\0'; 3]; a[..take].copy_from_slice(nuc_slice); a }, 0)
+                }
+            } else if onset_is_gi(onset_raw) && nucleus_start < n && self.buf.get(nucleus_start).base == b'i' {
+                let eff_start = nucleus_start + 1;
+                if eff_start < nucleus_end {
+                    let eff_len = (nucleus_end - eff_start).min(3);
+                    let mut enuc = ['\0'; 3];
+                    for i in 0..eff_len { enuc[i] = self.buf.get(eff_start + i).base_no_tone(); }
+                    (eff_start, enuc, 0usize)
+                } else {
+                    (nucleus_start, { let mut a = ['\0'; 3]; a[..take].copy_from_slice(nuc_slice); a }, 0)
+                }
+            } else {
+                (nucleus_start, { let mut a = ['\0'; 3]; a[..take].copy_from_slice(nuc_slice); a }, 0)
+            };
+
+        // Determine effective nucleus length.
+        let eff_len = (nucleus_end - eff_nucleus_start).min(3);
+        let eff_slice = &eff_nuc_slice[..eff_len];
+
+        // Look up tone-target in table.
+        if let Some(target_in_nucleus) = nucleus_tone_target(eff_slice) {
+            return Some(eff_nucleus_start + target_in_nucleus + tone_offset);
+        }
+
+        // Fallback: if no table match, use last vowel in nucleus.
+        if eff_nucleus_start < nucleus_end {
+            Some(nucleus_end - 1)
+        } else if nucleus_start < nucleus_end {
+            Some(nucleus_end - 1)
+        } else {
+            None
+        }
+    }
+
+    /// After a modifier changes the nucleus (circumflex/horn applied), re-place
+    /// the tone mark on the correct carrier according to the new nucleus shape.
+    fn reapply_tone_after_nucleus_change(&mut self) {
+        // Find if there is any existing tone in the nucleus.
+        let (_, nucleus_start, nucleus_end, _) = self.partition_syllable();
+        let mut tone_val: Option<u8> = None;
+        let mut old_carrier: Option<usize> = None;
+
+        for i in nucleus_start..nucleus_end {
+            let s = self.buf.get(i);
+            if s.flags & F_TONE_SET != 0 {
+                tone_val = Some(s.tone);
+                old_carrier = Some(i);
+                break;
+            }
+        }
+
+        let Some(tv) = tone_val else { return };
+        let Some(oc) = old_carrier else { return };
+
+        // Clear tone from old carrier.
+        {
+            let s = self.buf.get_mut(oc);
+            s.flags &= !F_TONE_SET;
+            s.tone = 0;
+            s.recompute_out();
+        }
+
+        // Re-place on new correct carrier.
+        if let Some(new_carrier) = self.tone_carrier_idx() {
+            let s = self.buf.get_mut(new_carrier);
+            s.tone = tv;
+            s.flags |= F_TONE_SET;
+            s.recompute_out();
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Syllable partitioning
+    // ------------------------------------------------------------------
+
+    /// Partition the current `buf` into (onset_end, nucleus_start, nucleus_end,
+    /// coda_start) indices.
+    ///
+    /// - `[0, onset_end)` = onset consonants (may include đ).
+    /// - `[nucleus_start, nucleus_end)` = vowels (nucleus_start == onset_end).
+    /// - `[coda_start, len)` = trailing coda consonants.
+    ///
+    /// For words where all chars are consonants (onset only, no vowel yet),
+    /// `nucleus_start == nucleus_end == len`.
+    fn partition_syllable(&self) -> (usize, usize, usize, usize) {
+        let n = self.buf.len();
+
+        // onset: consecutive non-vowels from the start.
+        let mut onset_end = 0;
+        while onset_end < n {
+            let s = self.buf.get(onset_end);
+            if self.is_vowel_entry(s) { break; }
+            onset_end += 1;
+        }
+
+        // Special case: `qu` digraph — if onset ends with `q` and the next
+        // entry is `u` (plain vowel, not modified), treat that `u` as part of
+        // the onset (it's a glide, not a nucleus vowel).
+        if onset_end < n
+            && onset_end > 0
+            && self.buf.get(onset_end - 1).base == b'q'
+        {
+            let next = self.buf.get(onset_end);
+            if next.base == b'u' && next.flags == 0 {
+                // The `u` after `q` is a glide; include it in the onset.
+                onset_end += 1;
+            }
+        }
+
+        // Special case: `gi` digraph — if onset ends with `g` and the next
+        // entry is plain `i`, treat that `i` as part of the onset (glide).
+        if onset_end < n
+            && onset_end > 0
+            && self.buf.get(onset_end - 1).base == b'g'
+        {
+            let prev2 = if onset_end >= 2 { self.buf.get(onset_end - 2).base } else { 0 };
+            // Only match `gi` (not `ngi` or other combos). Check that the `g` is
+            // at position onset_end-1 and there's no 'n' immediately before (ng vs g).
+            if prev2 != b'n' {
+                let next = self.buf.get(onset_end);
+                if next.base == b'i' && next.flags == 0 {
+                    onset_end += 1;
+                }
+            }
+        }
+
+        // nucleus: contiguous vowels from onset_end.
+        let nucleus_start = onset_end;
+        let mut nucleus_end = nucleus_start;
+        while nucleus_end < n {
+            let s = self.buf.get(nucleus_end);
+            if !self.is_vowel_entry(s) { break; }
+            nucleus_end += 1;
+        }
+
+        let coda_start = nucleus_end;
+        (onset_end, nucleus_start, nucleus_end, coda_start)
+    }
+
+    /// Returns true if `s` should be treated as a vowel entry in the syllable
+    /// structure. `w` standing alone as ư vowel is also a vowel.
+    fn is_vowel_entry(&self, s: &Syl) -> bool {
+        let b = s.base;
+        // Base vowels.
+        if self.mode.classify[b as usize] & IS_VOWEL != 0 { return true; }
+        // 'w' with F_HORN is ư (vowel).
+        if b == b'w' && s.flags & F_HORN != 0 { return true; }
+        false
+    }
+
+    /// Length of the onset (number of leading non-vowel entries).
+    fn onset_len(&self) -> usize {
+        let (onset_end, _, _, _) = self.partition_syllable();
+        onset_end
+    }
+
+    /// Returns the raw onset bytes as a slice into `self.raw`.
+    fn onset_raw_slice(&self) -> &[u8] {
+        let onset_len = self.onset_len();
+        &self.raw[..onset_len]
+    }
+
+    // ------------------------------------------------------------------
+    // Free-style modifier: find target for double-vowel (aa→â, ee→ê, oo→ô)
+    // ------------------------------------------------------------------
+
+    /// Search backward for a matching vowel to apply circumflex.
+    /// Returns the index in `buf` if found. Follows free-style rules:
+    /// can skip over glide vowels and w to find the same-base vowel.
+    fn find_modifier_target_for_double_vowel(&self, b: u8) -> Option<usize> {
+        let n = self.buf.len();
+        // Scan backward looking for a vowel with the same base to apply a
+        // modifier (e.g. second 'a' → â, second 'e' → ê).
+        //
+        // Rules:
+        // 1. Stop at a tone-key literal (e.g. 's' in Telex) — this is a tone
+        //    separator (e.g. "reset": r,e,s,e,t → 's' blocks the second 'e'
+        //    from bubbling back to the first 'e').
+        // 2. Stop at đ (onset modifier boundary).
+        // 3. If we find a toned vowel (F_TONE_SET) WITHOUT crossing any consonant
+        //    between it and the current position, do NOT bubble (the tone key was
+        //    between the two vowels, e.g. "reset"). But if we crossed at least one
+        //    consonant to reach it, DO bubble (free-style: "thajta" → "thật",
+        //    where 'j' is before the coda 't' and the second 'a' crosses 't').
+        let mut crossed_consonant = false;
+        for i in (0..n).rev() {
+            let s = self.buf.get(i);
+            if s.base == b && s.flags & F_LITERAL == 0 && s.flags & F_HORN == 0 {
+                // Found a candidate. If it has a tone but we haven't crossed any
+                // consonant, this is the "reset" pattern — tone key acted as a
+                // separator, don't bubble.
+                if s.flags & F_TONE_SET != 0 && !crossed_consonant {
+                    return None;
+                }
+                return Some(i);
+            }
+            // Track whether we've scanned past a consonant (coda position).
+            // In free-style typing like "thajta", the coda 't' is between the
+            // toned nucleus 'ạ' and the modifier 'a'.
+            let classify = self.mode.classify[s.base as usize];
+            if classify & IS_VOWEL == 0 && classify & IS_TONE_KEY == 0 && s.base != b'w' {
+                // It's a consonant (not a vowel, not a tone key, not the 'w' glide).
+                crossed_consonant = true;
+            }
+            // Stop if we encounter a tone-key literal in the buf.
+            if classify & IS_TONE_KEY != 0 {
+                return None;
+            }
+            // Also stop at đ (onset modifier boundary).
+            if s.base == b'd' && s.flags & F_HORN != 0 {
+                return None;
+            }
+        }
+        None
+    }
+
+    // ------------------------------------------------------------------
+    // Validation
+    // ------------------------------------------------------------------
+
+    /// Validate the current `buf` against positive syllable tables.
+    /// If invalid, mark all entries as literal (English passthrough).
+    ///
+    /// Called once at render time rather than on every keystroke for simplicity.
+    /// (Each `render_out_buf` call rebuilds from scratch.)
+    fn is_valid_vietnamese(&self) -> bool {
+        let n = self.buf.len();
+        if n == 0 { return true; }
+
+        // If any entry is already literal, the word is in passthrough mode.
+        // But we only set F_LITERAL for triple-cancel; for English detection
+        // we do the full check here.
+
+        let (onset_end, nucleus_start, nucleus_end, coda_start) =
+            self.partition_syllable();
+
+        // Words with only consonants are OK (onset-only, e.g. "ng", "tr" as they
+        // are being typed). The onset validity check handles these.
+        // Also: if there are trailing tone-key literals after a valid onset and
+        // NO vowels at all, treat the word as onset-only (e.g. VNI "d9" + "1").
+        if nucleus_start >= n {
+            // All consonants — could still be valid onset prefix.
+            let onset_raw = &self.raw[..n];
+            return is_legal_onset(onset_raw);
+        }
+
+
+        // Build onset raw.
+        let onset_raw = &self.raw[..onset_end];
+
+        // Build nucleus using modifier-resolved chars WITHOUT tone diacritics,
+        // because the nucleus table contains vowels like 'â', 'ê', 'ơ' but NOT
+        // toned forms like 'á', 'ế', 'ợ'. Tone is validated separately.
+        let nuc_len = (nucleus_end - nucleus_start).min(3);
+        let mut nuc = ['\0'; 3];
+        for i in 0..nuc_len {
+            nuc[i] = self.buf.get(nucleus_start + i).base_no_tone();
+        }
+        let nuc_slice = &nuc[..nuc_len];
+
+        // Build coda raw.
+        let coda_len = n - coda_start;
+        let mut coda_raw = [0u8; 4];
+        let coda_take = coda_len.min(4);
+        for i in 0..coda_take {
+            coda_raw[i] = self.buf.get(coda_start + i).base;
+        }
+        let coda_slice = &coda_raw[..coda_take];
+
+        // Get the current tone (if any).
+        let mut tone: u8 = 0;
+        for i in 0..n {
+            let s = self.buf.get(i);
+            if s.flags & F_TONE_SET != 0 {
+                tone = s.tone;
+                break;
+            }
+        }
+
+        // Validate.
+        if !is_legal_onset(onset_raw) { return false; }
+        if !is_legal_nucleus(nuc_slice) { return false; }
+        // Validate.
+        if !is_legal_coda(coda_slice) { return false; }
+        if !tone_allowed_for_coda(coda_slice, tone) { return false; }
+
+        // V-C-V check: if there are consonants within the nucleus range, this
+        // is an English word (e.g. "telex" → t-e-l-e-x, 'l' between two 'e's).
+        // In a valid Vietnamese syllable, the nucleus is always contiguous.
+        // We already split by first/last vowel; if nucleus_end - nucleus_start
+        // is larger than the actual vowel run, there's a consonant inside.
+        // The partition already handles this by stopping at non-vowels, so
+        // nucleus_start..nucleus_end is purely vowels. The V-C-V case is caught
+        // when the second 'e' (or 'a') tries to find a modifier target and
+        // fails because there's a consonant between them.
+
+        true
+    }
+
+    /// Mark all entries in `buf` as literal (passthrough mode).
+    fn mark_all_literal(&mut self) {
+        for i in 0..self.buf.len() {
+            let s = self.buf.get_mut(i);
+            s.flags |= F_LITERAL;
+            s.flags &= !(F_CIRCUMFLEX | F_HORN | F_TONE_SET);
+            s.tone = 0;
+            s.out = s.base as char;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Rendering
+    // ------------------------------------------------------------------
+
+    /// Rebuild `out_buf` from `buf`. Validates and renders.
+    fn render_out_buf(&mut self) {
+        self.out_buf.clear();
+        let n = self.buf.len();
+        if n == 0 { return; }
+
+        // Check for any F_LITERAL entries (triple-cancel set this).
+        let has_literal = (0..n).any(|i| self.buf.get(i).flags & F_LITERAL != 0);
+
+        if has_literal {
+            // Force-literal passthrough (triple-cancel): use raw passthrough with
+            // dd→đ substitution.
+            self.render_passthrough();
+            return;
+        }
+
+        // Validate Vietnamese syllable structure.
+        if !self.is_valid_vietnamese() {
+            // English/invalid passthrough: use raw passthrough.
+            self.render_passthrough();
+            return;
+        }
+
+        // Valid Vietnamese — render resolved chars from buf.
+        for i in 0..n {
+            let s = self.buf.get(i);
+            let c = s.render();
+            let _ = self.out_buf.push(c);
+        }
+    }
+
+    /// Render in passthrough mode: output raw bytes, but apply the `dd→đ`
+    /// substitution ONLY for `dd` pairs that appear in the onset and where
+    /// the corresponding buf entry is a transformed đ (F_HORN set).
+    ///
+    /// This preserves intentional Telex `đ` typing (e.g. `ddoww` → `đow`)
+    /// while letting English words like `added` and triple-cancel `ddd` pass
+    /// through unchanged.
+    fn render_passthrough(&mut self) {
+        // Build a map: for each raw position, is there a corresponding đ (F_HORN) entry?
+        // We track how many raw bytes correspond to each buf entry.
+        // For 'dd→đ', one buf entry consumes 2 raw bytes.
+        // For all other entries, one buf entry consumes 1 raw byte.
+        // We walk both in sync to determine if a 'dd' pair maps to a đ buf entry.
+        let n_buf = self.buf.len();
+        let mut buf_idx = 0usize;
+        let mut raw_idx = 0usize;
+        while raw_idx < self.raw_len {
+            let b = self.raw[raw_idx];
+            // Check if the current buf entry is a 'd' with F_HORN (transformed đ).
+            let is_dh = buf_idx < n_buf
+                && self.buf.get(buf_idx).base == b'd'
+                && self.buf.get(buf_idx).flags & F_HORN != 0;
+            if is_dh
+                && b == b'd'
+                && raw_idx + 1 < self.raw_len
+                && self.raw[raw_idx + 1] == b'd'
+            {
+                // This 'dd' pair corresponds to a đ buf entry: output đ.
+                let _ = self.out_buf.push('đ');
+                raw_idx += 2;
+                buf_idx += 1;
+            } else {
+                let _ = self.out_buf.push(b as char);
+                raw_idx += 1;
+                buf_idx += 1;
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------
+
+    /// Returns `true` if the 'u' at `idx` is a glide (part of 'qu' onset).
+    fn is_u_glide(&self, idx: usize) -> bool {
+        // After partition_syllable special-case, the 'u' glide in 'qu' is
+        // already inside the onset range (onset_end includes it). So 'u' is a
+        // glide if it is directly after 'q' in the buf.
+        if idx == 0 { return false; }
+        let prev = self.buf.get(idx - 1);
+        if prev.base == b'q' { return true; }
+        false
+    }
+
+    /// Returns true if 'i' at `idx` is a glide (part of 'gi' onset).
+    #[allow(dead_code)]
+    fn is_i_glide(&self, idx: usize) -> bool {
+        let onset_len = self.onset_len();
+        if idx == onset_len && onset_len >= 2
+            && self.raw[onset_len - 2] == b'g'
+            && self.raw[onset_len - 1] == b'i'
+        {
+            return true;
+        }
+        false
+    }
 }
+
+impl Default for UltraFastViEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+

@@ -85,6 +85,12 @@ void uvie_replay_reset(UvieReplayEngine *engine);
 
 int uvie_replay_is_composing(const UvieReplayEngine *engine);
 
+/**
+ * Get the accumulated committed text (auto-committed syllables).
+ * Returns byte count of written string (excluding null terminator).
+ */
+size_t uvie_replay_committed_text(const UvieReplayEngine *engine, char *out_buf, size_t out_len);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

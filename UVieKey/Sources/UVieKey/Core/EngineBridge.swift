@@ -35,6 +35,9 @@ func uvie_replay_commit(_ engine: OpaquePointer?, _ out_buf: UnsafeMutablePointe
 @_silgen_name("uvie_replay_is_composing")
 func uvie_replay_is_composing(_ engine: OpaquePointer?) -> Int32
 
+@_silgen_name("uvie_replay_committed_text")
+func uvie_replay_committed_text(_ engine: OpaquePointer?, _ out_buf: UnsafeMutablePointer<CChar>?, _ out_len: Int) -> Int
+
 /// ReplayEngine wrapper.
 /// Returns (backspace_count, new_output) from Rust, eliminating TextDiff.
 final class EngineBridge {
@@ -105,6 +108,13 @@ final class EngineBridge {
     func reset() {
         guard let engine else { return }
         uvie_replay_reset(engine)
+    }
+
+    func committedText() -> String {
+        guard let engine else { return "" }
+        var buf = [CChar](repeating: 0, count: 128)
+        _ = uvie_replay_committed_text(engine, &buf, buf.count)
+        return String(cString: buf)
     }
 }
 

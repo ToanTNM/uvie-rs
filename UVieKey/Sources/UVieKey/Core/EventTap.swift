@@ -381,8 +381,10 @@ final class EventTap: ObservableObject {
     }
 
     private func characterFromCGEvent(_ event: CGEvent) -> Character? {
+        // Use `.characters` (not `.charactersIgnoringModifiers`) so that
+        // Shift-held key events (e.g. Shift+A → 'A') preserve uppercase.
         if let nsEvent = NSEvent(cgEvent: event),
-           let chars = nsEvent.charactersIgnoringModifiers,
+           let chars = nsEvent.characters,
            let firstChar = chars.first {
             return firstChar
         }
