@@ -788,3 +788,338 @@ fn test_no_bs_without_out() {
         }
     }
 }
+
+#[test]
+fn debug_fix_xx_bs() {
+    // Scenario: type "fĩ" (phĩ?), then add x, x, then BS, then type more
+    // "fĩ" in Telex: f is tone huyền... but f alone → onset? 
+    // Actually: what sequence produces "fĩ"?
+    // f = tone huyền in Telex (but only applied to vowel)
+    // OR f = quick-start for ph?
+    // Let's try: "gi" + "x" + "x" + BS + type
+    // More likely user means: type a word ending in ĩ (ngã tone on i)
+    // then x (ngã = x in Telex), then x again, then BS
+    // e.g. "gix" → "gĩ", then "x" → "gĩx" (double x cancel), then BS
+    
+    // Reproduce: type "gix" (gĩ), then x (double-cancel), then BS, then type
+    let test_sequences: &[(&str, &[char], &str)] = &[
+        ("gix",  &['x', 'x', '\x08', 'x'],  "gĩx"),  // gĩ + xx (cancel) + BS + x
+        ("fi",   &['x', 'x', '\x08'],        "fix"),   // fi + x + x + BS
+        ("fis",  &['x', 'x', '\x08', 'p'],   "fisp"),
+    ];
+    
+    // Main scenario: type the base word, then xx, BS, continue
+    {
+        let mut e = ReplayEngine::new();
+        let mut screen = String::new();
+        
+        // Type "gix" → gĩ
+        for ch in "gix".chars() {
+            let (bs, out) = e.feed(ch);
+            for _ in 0..bs { screen.pop(); }
+            screen.push_str(&out);
+        }
+        println!("gix: {:?}", screen);
+        
+        // Type second x → double-cancel → "gix" passthrough
+        let (bs, out) = e.feed('x');
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("gixx: {:?} (bs={}, out={:?})", screen, bs, out);
+        
+        // BS once
+        let (bs, out) = e.backspace();
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("gixx+BS: {:?} (bs={}, out={:?})", screen, bs, out);
+        
+        // Type 'x' again → should give gĩ
+        let (bs, out) = e.feed('x');
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("gixx+BS+x: {:?} (bs={}, out={:?})", screen, bs, out);
+        
+        assert_eq!(screen, "gĩ", "gixx+BS+x should recover gĩ");
+    }
+}
+
+#[test]
+fn debug_fix_scenario_exact() {
+    // Trace exact: f+i+x → then x → then BS → then type
+    let mut e = ReplayEngine::new();
+    let mut screen = String::new();
+    
+    for ch in "fix".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("  fed {:?}: bs={} out={:?} screen={:?}", ch, bs, out, screen);
+    }
+    println!("fix: {:?}", screen);
+    
+    // x again (double-cancel)
+    let (bs, out) = e.feed('x');
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("fixx: bs={} out={:?} screen={:?}", bs, out, screen);
+    
+    // BS
+    let (bs, out) = e.backspace();
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("fixx+BS: bs={} out={:?} screen={:?}", bs, out, screen);
+    
+    // Type 'x' to re-apply tone
+    let (bs, out) = e.feed('x');
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("fixx+BS+x: bs={} out={:?} screen={:?}", bs, out, screen);
+    
+    // Type more chars
+    for ch in " after".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    println!("full: {:?}", screen);
+}
+
+#[test]
+fn debug_fix_then_continue() {
+    // fĩ + x (double cancel → fix) + x (another x!) + BS + type
+    // This is: f+i+x+x+x+BS+...
+    let mut e = ReplayEngine::new();
+    let mut screen = String::new();
+    
+    // Type f, i, x, x, x (3 x's)
+    for ch in "fixxx".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("  fed {:?}: bs={} out={:?} screen={:?}", ch, bs, out, screen);
+    }
+    println!("fixxx: {:?}", screen);
+    
+    // BS once
+    let (bs, out) = e.backspace();
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("fixxx+BS: bs={} out={:?} screen={:?}", bs, out, screen);
+    
+    // Type 'n' (gõ thêm để tạo từ)
+    for ch in "nhan".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("  fed {:?}: bs={} out={:?} screen={:?}", ch, bs, out, screen);
+    }
+    println!("final: {:?}", screen);
+}
+
+#[test]
+fn debug_fixxx_detailed() {
+    let mut e = ReplayEngine::new();
+    let mut screen = String::new();
+    
+    for ch in "fixxx".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("fed {:?}: bs={} out={:?} current={:?} screen={:?}", 
+                 ch, bs, out, e.current_composing(), screen);
+    }
+    
+    let (bs, out) = e.backspace();
+    println!("BS: bs={} out={:?} current={:?}", bs, out, e.current_composing());
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("screen after BS: {:?}", screen);
+}
+
+#[test]
+fn debug_fixxx_trace_inner() {
+    use uvie::UltraFastViEngine;
+    // Trace the inner engine directly for fixxx
+    let mut e = UltraFastViEngine::new();
+    for ch in "fixxx".chars() {
+        let out = e.feed(ch);
+        println!("inner fed {:?}: {:?}", ch, out);
+    }
+    // Now backspace
+    let out = e.backspace();
+    println!("inner BS: {:?}", out);
+}
+
+#[test]
+fn debug_fixxx_bs_then_letter() {
+    let mut e = ReplayEngine::new();
+    let mut screen = String::new();
+    
+    for ch in "fixxx".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    println!("fixxx: screen={:?} raw_len={}", screen, e.raw_len());
+    
+    let (bs, out) = e.backspace();
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("BS: bs={} out={:?} screen={:?} raw_len={}", bs, out, screen, e.raw_len());
+    
+    // Type 'n'
+    let (bs, out) = e.feed('n');
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("n: bs={} out={:?} screen={:?} raw_len={}", bs, out, screen, e.raw_len());
+    
+    // Type 'h'
+    let (bs, out) = e.feed('h');
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("h: bs={} out={:?} screen={:?} raw_len={}", bs, out, screen, e.raw_len());
+    
+    // Type 'a'
+    let (bs, out) = e.feed('a');
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("a: bs={} out={:?} screen={:?} raw_len={}", bs, out, screen, e.raw_len());
+}
+
+#[test]
+fn debug_fixnha_inner() {
+    use uvie::UltraFastViEngine;
+    let mut e = UltraFastViEngine::new();
+    for ch in "fixnha".chars() {
+        let out = e.feed(ch);
+        println!("inner fed {:?}: {:?}", ch, out);
+    }
+}
+
+#[test]
+fn debug_fixx_bs_space_then_word() {
+    // fĩ + x + x (cancel) + BS + space → commit? then new word
+    let mut e = ReplayEngine::new();
+    let mut screen = String::new();
+    
+    for ch in "fixx".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    println!("fixx: {:?} raw={}", screen, e.raw_len());
+    
+    // BS once
+    let (bs, out) = e.backspace();
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("fixx+BS: bs={} {:?} raw={}", bs, screen, e.raw_len());
+    
+    // Space → commit
+    let (bs, out) = e.feed(' ');
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("space: {:?} raw={}", screen, e.raw_len());
+    
+    // Type "phast" fresh
+    for ch in "phast".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+    }
+    println!("phast: {:?}", screen);
+    assert!(screen.ends_with("phát"), "should end with phát, got {:?}", screen);
+    
+    // Also: fixx + BS → "fĩ" on screen → space → commit fĩ + "phast"
+    let mut e2 = ReplayEngine::new();
+    let mut s2 = String::new();
+    for ch in "fixx".chars() {
+        let (bs, out) = e2.feed(ch);
+        for _ in 0..bs { s2.pop(); }
+        s2.push_str(&out);
+    }
+    // BS
+    let (bs, out) = e2.backspace();
+    for _ in 0..bs { s2.pop(); }
+    s2.push_str(&out);
+    // Space 
+    let (bs, out) = e2.feed(' ');
+    for _ in 0..bs { s2.pop(); }
+    s2.push_str(&out);
+    println!("e2 after space: {:?}", s2);
+    // Type "phast"
+    for ch in "phast".chars() {
+        let (bs, out) = e2.feed(ch);
+        for _ in 0..bs { s2.pop(); }
+        s2.push_str(&out);
+        println!("  e2 fed {:?}: bs={} out={:?} screen={:?}", ch, bs, out, s2);
+    }
+    println!("e2 final: {:?}", s2);
+}
+
+#[test]
+fn debug_fi_4x_bs_type() {
+    // fi + xxxx (4 x's) + BS + type
+    let mut e = ReplayEngine::new();
+    let mut screen = String::new();
+    
+    for ch in "fixxxx".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("fed {:?}: bs={} out={:?} screen={:?} raw={}", ch, bs, out, screen, e.raw_len());
+    }
+    
+    println!("--- BS ---");
+    let (bs, out) = e.backspace();
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("BS: bs={} out={:?} screen={:?} raw={}", bs, out, screen, e.raw_len());
+    
+    println!("--- type 'a' ---");
+    let (bs, out) = e.feed('a');
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("a: bs={} out={:?} screen={:?} raw={}", bs, out, screen, e.raw_len());
+    
+    println!("--- type 'n' ---");
+    let (bs, out) = e.feed('n');
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("n: bs={} out={:?} screen={:?} raw={}", bs, out, screen, e.raw_len());
+}
+
+#[test]
+fn debug_fixx_quickstart_bs_type() {
+    // With quick-start mode: f→ph, so "fix" = "phĩ"
+    // Then xx + BS + type → should not stick
+    let mut e = ReplayEngine::new();
+    e.set_quick_start(true);
+    let mut screen = String::new();
+    
+    for ch in "fixxx".chars() {
+        let (bs, out) = e.feed(ch);
+        for _ in 0..bs { screen.pop(); }
+        screen.push_str(&out);
+        println!("fed {:?}: bs={} out={:?} screen={:?} raw={}", ch, bs, out, screen, e.raw_len());
+    }
+    println!("--- BS ---");
+    let (bs, out) = e.backspace();
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("BS: bs={} out={:?} screen={:?} raw={}", bs, out, screen, e.raw_len());
+    
+    // Type 'a'
+    let (bs, out) = e.feed('a');
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("a: bs={} out={:?} screen={:?} raw={}", bs, out, screen, e.raw_len());
+    
+    // Type 'n'
+    let (bs, out) = e.feed('n');
+    for _ in 0..bs { screen.pop(); }
+    screen.push_str(&out);
+    println!("n: bs={} out={:?} screen={:?} raw={}", bs, out, screen, e.raw_len());
+    
+    println!("no sticky chars in screen: {:?}", screen);
+}

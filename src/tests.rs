@@ -659,6 +659,11 @@ fn no_bubble_across_consonants() {
 
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "chuanar"), "chuẩn");
+
+    // wwork: 'w' alone → ư vowel, second 'w' double-cancel → passthrough "wwork"
+    // (not "work" — free-style does not apply across word boundary here)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "wwork"), "wwork");
     
 
     // Free-style across consonants without tone: nene -> nên
@@ -1320,5 +1325,45 @@ fn test_ua_diphthong_tone() {
         let out = type_seq(&mut e, input);
         println!("{:?} -> {:?} (expected {:?}) {}", input, out, expected,
             if out == *expected { "✓" } else { "✗" });
+    }
+}
+
+#[test]
+fn debug_wwork() {
+    let mut e = UltraFastViEngine::new();
+    for ch in "wwork".chars() {
+        let out = e.feed(ch);
+        println!("fed {:?}: {:?}", ch, out);
+    }
+}
+
+#[test]
+fn debug_neeb_raw_len() {
+    let mut e = UltraFastViEngine::new();
+    for ch in "neeb".chars() {
+        let out = e.feed(ch).to_string();
+        let rl = e.raw_len();
+        println!("inner fed {:?}: {:?} raw_len={}", ch, out, rl);
+    }
+}
+
+#[test]
+fn debug_triple_cancel_trace() {
+    use crate::ReplayEngine;
+    let mut e = ReplayEngine::new();
+    for ch in "neeeb".chars() {
+        e.feed(ch);
+        let rl = e.raw_len();
+        println!("fed {:?}: current={:?} raw={}", ch, e.current_composing(), rl);
+    }
+}
+
+#[test]
+fn debug_inner_neee() {
+    let mut e = UltraFastViEngine::new();
+    for ch in "neee".chars() {
+        let out = e.feed(ch).to_string();
+        let rl = e.raw_len();
+        println!("fed {:?}: out={:?} raw={}", ch, out, rl);
     }
 }

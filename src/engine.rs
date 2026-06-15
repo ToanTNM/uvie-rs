@@ -113,6 +113,9 @@ impl UltraFastViEngine {
 
     pub fn is_composing(&self) -> bool { !self.buf.is_empty() }
 
+    /// Current logical raw length (may differ from push count due to double-cancel).
+    pub fn raw_len(&self) -> usize { self.raw_len }
+
     pub fn current_composing(&self) -> &str { &self.out_buf }
 
     /// Returns the classify flags for a raw byte in the current input mode.

@@ -140,8 +140,37 @@ impl ReplayEngine {
             return (bs, suffix);
         }
 
+        let raw_len_before = self.inner.raw_len();
         let _ = self.raw_buf.try_push(ch);
         let new_composed = self.inner.feed(ch).to_string();
+        let raw_len_after = self.inner.raw_len();
+
+        // Double-tone-cancel: inside the engine, push_raw_key adds 1 then
+        // double-cancel subtracts 1, so net raw_len change = 0 instead of +1.
+        // raw_buf always pushed the new char, so it grew by 1 more than inner.
+        // Detect: if raw_len_after == raw_len_before (no net growth), one extra
+        // byte sits in raw_buf that inner doesn't know about. Remove it.
+        // We only handle net=0 (double-cancel eats exactly one byte). Larger drops
+        // (modifier-cancel replays from scratch) are left alone — inner's backspace
+        // replay handles them correctly via its own raw array.
+        let double_cancel_fired = raw_len_after == raw_len_before && !self.raw_buf.is_empty();
+        if double_cancel_fired {
+            // Net zero growth: inner consumed the char + one previous byte.
+            // raw_buf has one extra byte at position len-2 (the previous key).
+            // Remove it: swap the just-pushed char to len-2, then truncate.
+            let last_idx = self.raw_buf.len() - 1;
+            if last_idx >= 1 {
+                self.raw_buf.swap(last_idx - 1, last_idx);
+                self.raw_buf.truncate(last_idx);
+            }
+            // The previously-valid state (last_valid_raw_len / last_valid_out) is
+            // now stale because the syllable has changed. Reset it so that the
+            // next consonant is NOT treated as an optimistic extension of the
+            // old valid word — which would produce ghost diacritics ("nêb" bug).
+            self.last_valid_raw_len = 0;
+            self.last_valid_out.clear();
+        }
+
         let is_now_raw = is_raw_passthrough(&self.raw_buf, &new_composed);
 
         // Track the last valid (non-raw) composing state for VCV detection.
@@ -304,6 +333,8 @@ impl ReplayEngine {
     pub fn is_composing(&self) -> bool {
         self.inner.is_composing()
     }
+
+    pub fn raw_len(&self) -> usize { self.raw_buf.len() }
 
     /// The composing text currently visible on screen.
     pub fn current_composing(&self) -> &str {
