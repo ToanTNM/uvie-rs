@@ -7,8 +7,7 @@
 //! # Design rationale
 //!
 //! Keeping per-char state lets the engine do transforms by flipping bits on
-//! the right element and re-rendering only the affected suffix — the same
-//! approach OpenKey uses with its `TypingWord[]` `Uint32` bitmask buffer.
+//! the right element and re-rendering only the affected suffix.
 //!
 //! Validation always operates on the raw `base` sequence, never on resolved
 //! `out` chars, which is what makes English passthrough automatic.

@@ -1,6 +1,6 @@
 //! Positive Vietnamese syllable pattern tables.
 //!
-//! Positive onset / nucleus / coda tables ported from OpenKey's `Vietnamese.cpp`.
+//! Positive onset / nucleus / coda tables for Vietnamese syllable validation.
 //!
 //! # Validation strategy
 //!
@@ -18,8 +18,7 @@
 //!
 //! # Sources
 //!
-//! - OpenKey `Vietnamese.cpp` — `_consonantTable`, `_endConsonantTable`,
-//!   `_vowel`, `_vowelCombine`, `_vowelForMark` (modern-mark positions).
+//! - Vietnamese orthography standard (onset/coda/nucleus constraints).
 //! - Cross-referenced against `src/tests.rs` for tone-placement tests.
 
 // ---------------------------------------------------------------------------
@@ -32,11 +31,11 @@
 /// Single-char consonants b/c/d/g/h/k/l/m/n/p/q/r/s/t/v/x are all legal;
 /// they are listed here as 1-char entries. Multi-char clusters are explicit.
 ///
-/// OpenKey `_consonantTable` source:
+/// Standard Vietnamese consonant clusters:
 /// ```text
 /// {NGH}, {PH}, {TH}, {TR}, {GI}, {CH}, {NH}, {NG}, {KH}, {GH},
 /// {G}, {C}, {Q}, {K}, {T}, {R}, {H}, {B}, {M}, {V}, {N}, {L},
-/// {X}, {P}, {S}, {D}, (F/W/Z/J as CONSONANT_ALLOW - foreign/special)
+/// {X}, {P}, {S}, {D}, (F/W/Z/J as foreign/special)
 /// ```
 static LEGAL_ONSETS: &[&[u8]] = &[
     // 3-char
@@ -49,7 +48,7 @@ static LEGAL_ONSETS: &[&[u8]] = &[
     b"q", b"r", b"s", b"t", b"v", b"x",
     // đ (base 'd', but in practice the engine stores raw 'd' for đ onset too)
     b"d",
-    // Foreign/extended allowed as onset per OpenKey CONSONANT_ALLOW_MASK
+    // Foreign/extended allowed as onset
     b"f", b"w", b"z", b"j",
 ];
 
@@ -84,9 +83,8 @@ pub fn is_legal_onset(onset: &[u8]) -> bool {
 
 /// Legal Vietnamese final consonant clusters (raw ASCII).
 ///
-/// OpenKey `_endConsonantTable`:
+/// Standard Vietnamese final consonants:
 /// `{T}, {P}, {C}, {N}, {M}, {NG}, {NH}, {CH}`
-/// Plus standalone `{C}` (mapped from KEY_K END_CONSONANT, KEY_H END_CONSONANT).
 ///
 /// Note: `ng`, `nh`, `ch` are stored as 2-byte slices; single finals as 1-byte.
 /// The key `c` can represent final /k/ (before ă/â) *or* final /c/ — both legal.
@@ -119,7 +117,7 @@ pub fn is_legal_coda(coda: &[u8]) -> bool {
 /// - Codas `c`, `ch`, `p`, `t` only allow tones sắc (1) and nặng (5).
 /// - All other codas (or empty coda) allow any tone.
 ///
-/// OpenKey enforces this in `checkToneWithEndConsonant`.
+/// Vietnamese phonotactic rule: stopped codas only allow sắc/nặng tones.
 pub fn tone_allowed_for_coda(coda: &[u8], tone: u8) -> bool {
     if tone == 0 {
         return true; // bằng / no-tone always OK
@@ -167,8 +165,6 @@ struct NucleusEntry {
 /// Sorted longest-first so the search loop can do prefix-match correctly.
 ///
 /// Sources:
-/// - OpenKey `_vowelForMark` (modern orthography mark positions)
-/// - OpenKey `_vowelCombine` (diphthong/triphthong combos)
 /// - Vietnamese orthography standard (modern style: tone on "main" vowel)
 ///
 /// Tone-target rules (modern orthography):
@@ -181,7 +177,7 @@ struct NucleusEntry {
 ///   tone on the vowel that is NOT the final glide, typically index 0.
 /// - Single vowels: index 0.
 ///
-/// The `qu`/`gi` special case (OpenKey Engine.cpp:470-472, 624-636):
+/// The `qu`/`gi` special case:
 /// after `qu`, the `u` is a glide (not nucleus), so `qua` nucleus = `[a]`,
 /// tone-target = 0. After `gi`, the `i` is a glide, so `gia` nucleus = `[a]`.
 /// This is handled at the engine level, not here.
