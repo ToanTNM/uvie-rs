@@ -3,7 +3,7 @@
 //! The diff engine wraps the core composing engine and computes minimal
 //! (backspace_count, suffix_to_type) instructions for each keystroke.
 
-use crate::buffers::{OutBuffer, new_out_buffer};
+use crate::buffers::{CharVec, OutBuffer, new_out_buffer};
 use crate::engine::UltraFastViEngine;
 use crate::modes::{IS_TONE_KEY, Mode};
 use crate::composing::Composable;
@@ -11,7 +11,7 @@ use crate::composing::Composable;
 /// Diff-mode state: tracks what's on screen vs what the engine produced.
 pub struct DiffState {
     /// Raw keystroke buffer for feed_diff (chars, not bytes; needed for V-C-V split).
-    pub raw_chars: arrayvec::ArrayVec<char, 24>,
+    pub raw_chars: CharVec<24>,
     /// Composing text currently visible on screen (for diffing).
     pub prev_rendered: OutBuffer,
     /// The inner engine's true last render (diff baseline).
@@ -35,7 +35,7 @@ impl Default for DiffState {
 impl DiffState {
     pub fn new() -> Self {
         Self {
-            raw_chars: arrayvec::ArrayVec::new(),
+            raw_chars: CharVec::new(),
             prev_rendered: new_out_buffer(),
             prev_inner_render: new_out_buffer(),
             last_valid_raw_len: 0,
@@ -162,9 +162,9 @@ impl Diffable for UltraFastViEngine {
         {
             let split = Self::find_split_point(&self.diff.raw_chars);
             if split > 0 {
-                let committed_raw: arrayvec::ArrayVec<char, 24> =
+                let committed_raw: CharVec<24> =
                     self.diff.raw_chars[..split].iter().copied().collect();
-                let new_syl_raw: arrayvec::ArrayVec<char, 24> =
+                let new_syl_raw: CharVec<24> =
                     self.diff.raw_chars[split..].iter().copied().collect();
 
                 let committed_out = Self::rerender_chars(&committed_raw, self.mode);

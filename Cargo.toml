@@ -12,7 +12,6 @@ categories = ["text-processing", "no-std::no-alloc"]
 exclude = ["target/", "docs/"]
 
 [dependencies]
-arrayvec = "0.7"
 heapless = { version = "0.8", optional = true }
 
 [build-dependencies]

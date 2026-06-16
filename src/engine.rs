@@ -1,34 +1,3 @@
-//! Incremental stateful Vietnamese input engine.
-//!
-//! # Architecture
-//!
-//! Each keystroke is processed once and the engine keeps per-char state in a
-//! `SylBuf`. Validation runs against positive syllable pattern tables
-//! (`tables.rs`) on raw keystrokes — *before* any Unicode transform — so
-//! English words are automatically rejected without a blacklist.
-//!
-//! ## Flow per keystroke
-//!
-//! ```text
-//! feed(key)
-//!   1. classify(key) → Consonant | Vowel | Modifier | ToneKey | Boundary
-//!   2. handle_consonant / handle_vowel / handle_modifier / handle_tone
-//!   3. revalidate_word() — check raw onset/nucleus/coda against tables.rs
-//!        invalid? → mark_all_literal() (English passthrough)
-//!   4. render out_buf from SylBuf
-//! ```
-//!
-//! ## Key invariants
-//!
-//! - `raw[..raw_len]` always equals the original keystrokes, so fallback to
-//!   literal output is always available.
-//! - Tone placement is driven by `tables::nucleus_tone_target` — no positional
-//!   heuristics. This correctly handles `iê`, `uyê`, `ươ`, `oa`, etc.
-//! - Modifier "bubbling" (free-style: `tieengs` → `tiếng`) is handled by the
-//!   raw-scan approach in `handle_modifier`: the modifier key searches backward
-//!   for its target vowel, skipping over other vowels and glides that already
-//!   form a legal sequence.
-
 use crate::buffers::{OutBuffer, new_out_buffer};
 use crate::composing::Composable;
 use crate::diff::DiffState;
