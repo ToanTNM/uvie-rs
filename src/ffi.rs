@@ -2,6 +2,7 @@ use std::ffi::{c_char, c_int};
 use std::ptr;
 use std::sync::{Mutex, MutexGuard};
 
+use crate::diff::Diffable;
 use crate::engine::UltraFastViEngine;
 use crate::modes::InputMethod;
 

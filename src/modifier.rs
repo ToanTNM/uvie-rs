@@ -1,0 +1,274 @@
+//! Modifier key handling (Telex w/d, VNI 6/7/8/9, double-vowel circumflex).
+
+use crate::engine::UltraFastViEngine;
+use crate::modes::{IS_TONE_KEY, IS_VOWEL};
+use crate::syllable::{F_CAPS, F_CIRCUMFLEX, F_HORN, F_LITERAL, F_TONE_SET, Syl};
+use crate::tone_handler::ToneHandler;
+use crate::validation::SyllableValidator;
+
+/// Modifier key handling (circumflex, horn, breve, đ).
+pub(crate) trait ModifierHandler {
+    fn handle_modifier(&mut self, b: u8, caps: bool);
+    fn handle_telex_w(&mut self, caps: bool);
+    fn handle_telex_d(&mut self, caps: bool);
+    fn handle_vni_6(&mut self, caps: bool);
+    fn handle_vni_7(&mut self, caps: bool);
+    fn handle_vni_8(&mut self, caps: bool);
+    fn handle_vni_9(&mut self, caps: bool);
+    fn find_modifier_target_for_double_vowel(&self, b: u8) -> Option<usize>;
+}
+
+impl ModifierHandler for UltraFastViEngine {
+    fn handle_modifier(&mut self, b: u8, caps: bool) {
+        match b {
+            b'w' => self.handle_telex_w(caps),
+            b'd' => self.handle_telex_d(caps),
+            b'6' => self.handle_vni_6(caps),
+            b'7' => self.handle_vni_7(caps),
+            b'8' => self.handle_vni_8(caps),
+            b'9' => self.handle_vni_9(caps),
+            _ => {
+                self.buf.push(Syl::literal(b, caps));
+            }
+        }
+    }
+
+    fn handle_telex_w(&mut self, caps: bool) {
+        let n = self.buf.len();
+
+        for i in (0..n).rev() {
+            let syl = self.buf.get(i);
+            match syl.base {
+                b'u' => {
+                    if self.is_u_glide(i) { break; }
+                    if syl.flags & F_HORN != 0 {
+                        let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
+                        self.buf.set(i, reverted);
+                        if self.raw_len > 0 { self.raw_len -= 1; }
+                        self.buf.push(Syl::literal(b'w', caps));
+                        self.reapply_tone_after_nucleus_change();
+                        return;
+                    }
+                    let updated = self.buf.get(i).clone().with_horn();
+                    self.buf.set(i, updated);
+                    self.reapply_tone_after_nucleus_change();
+                    return;
+                }
+                b'o' => {
+                    if syl.flags & F_HORN != 0 {
+                        let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
+                        self.buf.set(i, reverted);
+                        if self.raw_len > 0 { self.raw_len -= 1; }
+                        self.buf.push(Syl::literal(b'w', caps));
+                        if i > 0 {
+                            let prev = self.buf.get(i - 1);
+                            if prev.base == b'u' && prev.flags & F_HORN != 0 {
+                                let reverted_u = Syl::literal(b'u', prev.flags & F_CAPS != 0);
+                                self.buf.set(i - 1, reverted_u);
+                            }
+                        }
+                        self.reapply_tone_after_nucleus_change();
+                        return;
+                    }
+                    let updated = self.buf.get(i).clone().with_horn();
+                    self.buf.set(i, updated);
+                    if i > 0 {
+                        let prev = self.buf.get(i - 1);
+                        if prev.base == b'u' && prev.flags == 0 && !self.is_u_glide(i - 1) {
+                            let promoted = prev.clone().with_horn();
+                            self.buf.set(i - 1, promoted);
+                        }
+                    }
+                    self.reapply_tone_after_nucleus_change();
+                    return;
+                }
+                b'a' => {
+                    if syl.flags & F_CIRCUMFLEX != 0 { continue; }
+                    if syl.flags & F_HORN != 0 {
+                        let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
+                        self.buf.set(i, reverted);
+                        if self.raw_len > 0 { self.raw_len -= 1; }
+                        self.buf.push(Syl::literal(b'w', caps));
+                        self.reapply_tone_after_nucleus_change();
+                        return;
+                    }
+                    let updated = self.buf.get(i).clone().with_horn();
+                    self.buf.set(i, updated);
+                    self.reapply_tone_after_nucleus_change();
+                    return;
+                }
+                b'w' if syl.flags & F_HORN != 0 => {
+                    let reverted = Syl::literal(b'w', syl.flags & F_CAPS != 0);
+                    self.buf.set(i, reverted);
+                    if self.raw_len > 0 { self.raw_len -= 1; }
+                    self.buf.push(Syl::literal(b'w', caps));
+                    self.reapply_tone_after_nucleus_change();
+                    return;
+                }
+                b'd' => {
+                    break;
+                }
+                _ if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 => {
+                    break;
+                }
+                _ => continue,
+            }
+        }
+
+        // No match — standalone 'w' becomes ư at onset.
+        let onset_len = self.onset_len();
+        if onset_len == n {
+            let mut syl = Syl::literal(b'w', caps);
+            syl.flags |= F_HORN;
+            syl.out = if caps { 'Ư' } else { 'ư' };
+            self.buf.push(syl);
+            self.reapply_tone_after_nucleus_change();
+        } else {
+            self.buf.push(Syl::literal(b'w', caps));
+        }
+    }
+
+    fn handle_telex_d(&mut self, caps: bool) {
+        let n = self.buf.len();
+
+        for i in (0..n).rev() {
+            let s = self.buf.get(i);
+            if s.base == b'd' && s.flags & F_HORN != 0 {
+                if self.is_valid_vietnamese() {
+                    let reverted = Syl::literal(b'd', s.flags & F_CAPS != 0);
+                    self.buf.set(i, reverted);
+                    self.buf.push(Syl::literal(b'd', caps));
+                    if self.raw_len > 0 { self.raw_len -= 1; }
+                    self.mark_all_literal();
+                    return;
+                }
+                break;
+            }
+            if s.base == b'd' && s.flags & F_LITERAL == 0 && s.flags & F_HORN == 0 {
+                let is_in_onset = (0..i).all(|j| {
+                    let sj = self.buf.get(j);
+                    self.mode.classify[sj.base as usize] & IS_VOWEL == 0
+                        && sj.base != b'w'
+                });
+                if !is_in_onset {
+                    break;
+                }
+                let new_syl = Syl {
+                    base: b'd',
+                    out: if s.flags & F_CAPS != 0 { 'Đ' } else { 'đ' },
+                    tone: 0,
+                    flags: s.flags | F_HORN,
+                };
+                self.buf.set(i, new_syl);
+                return;
+            }
+        }
+
+        self.buf.push(Syl::literal(b'd', caps));
+    }
+
+    fn handle_vni_6(&mut self, _caps: bool) {
+        for i in (0..self.buf.len()).rev() {
+            let syl = self.buf.get(i);
+            if matches!(syl.base, b'a' | b'e' | b'o') && syl.flags & F_LITERAL == 0 {
+                if syl.flags & F_CIRCUMFLEX != 0 {
+                    let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
+                    self.buf.set(i, reverted);
+                } else {
+                    let updated = self.buf.get(i).clone().with_circumflex();
+                    self.buf.set(i, updated);
+                }
+                self.reapply_tone_after_nucleus_change();
+                return;
+            }
+            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 { break; }
+        }
+        self.buf.push(Syl::literal(b'6', false));
+    }
+
+    fn handle_vni_7(&mut self, _caps: bool) {
+        for i in (0..self.buf.len()).rev() {
+            let syl = self.buf.get(i);
+            if matches!(syl.base, b'o' | b'u') && syl.flags & F_LITERAL == 0 {
+                if syl.flags & F_HORN != 0 {
+                    let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
+                    self.buf.set(i, reverted);
+                } else {
+                    let updated = self.buf.get(i).clone().with_horn();
+                    self.buf.set(i, updated);
+                }
+                self.reapply_tone_after_nucleus_change();
+                return;
+            }
+            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 { break; }
+        }
+        self.buf.push(Syl::literal(b'7', false));
+    }
+
+    fn handle_vni_8(&mut self, _caps: bool) {
+        for i in (0..self.buf.len()).rev() {
+            let syl = self.buf.get(i);
+            if syl.base == b'a' && syl.flags & F_LITERAL == 0 {
+                if syl.flags & F_HORN != 0 {
+                    let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
+                    self.buf.set(i, reverted);
+                } else {
+                    let updated = self.buf.get(i).clone().with_horn();
+                    self.buf.set(i, updated);
+                }
+                self.reapply_tone_after_nucleus_change();
+                return;
+            }
+            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 { break; }
+        }
+        self.buf.push(Syl::literal(b'8', false));
+    }
+
+    fn handle_vni_9(&mut self, _caps: bool) {
+        for i in (0..self.buf.len()).rev() {
+            let syl = self.buf.get(i);
+            if syl.base == b'd' && syl.flags & F_LITERAL == 0 {
+                if syl.flags & F_HORN != 0 {
+                    let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
+                    self.buf.set(i, reverted);
+                } else {
+                    let new_syl = Syl {
+                        base: b'd',
+                        out: if syl.flags & F_CAPS != 0 { 'Đ' } else { 'đ' },
+                        tone: 0,
+                        flags: syl.flags | F_HORN,
+                    };
+                    self.buf.set(i, new_syl);
+                }
+                return;
+            }
+            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 { break; }
+        }
+        self.buf.push(Syl::literal(b'9', false));
+    }
+
+    fn find_modifier_target_for_double_vowel(&self, b: u8) -> Option<usize> {
+        let n = self.buf.len();
+        let mut crossed_consonant = false;
+        for i in (0..n).rev() {
+            let s = self.buf.get(i);
+            if s.base == b && s.flags & F_LITERAL == 0 && s.flags & F_HORN == 0 {
+                if s.flags & F_TONE_SET != 0 && !crossed_consonant {
+                    return None;
+                }
+                return Some(i);
+            }
+            let classify = self.mode.classify[s.base as usize];
+            if classify & IS_VOWEL == 0 && classify & IS_TONE_KEY == 0 && s.base != b'w' {
+                crossed_consonant = true;
+            }
+            if classify & IS_TONE_KEY != 0 {
+                return None;
+            }
+            if s.base == b'd' && s.flags & F_HORN != 0 {
+                return None;
+            }
+        }
+        None
+    }
+}

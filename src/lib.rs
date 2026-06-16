@@ -16,6 +16,14 @@ pub mod syllable;
 pub mod tables;
 pub mod tone;
 
+// Internal modules split from engine.rs for single-responsibility.
+// `diff` is public so external code can import the `Diffable` trait.
+pub(crate) mod composing;
+pub mod diff;
+pub(crate) mod modifier;
+pub(crate) mod tone_handler;
+pub(crate) mod validation;
+
 /// Deprecated: replaced by `tables.rs` positive validation.
 ///
 /// This module will be removed in a future release. It is kept temporarily

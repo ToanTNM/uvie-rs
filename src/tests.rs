@@ -1,3 +1,4 @@
+use crate::diff::Diffable;
 use crate::{InputMethod, NucleusKind, OnsetKind, UltraFastViEngine};
 
 /// Simulates IME typing: whitespace commits the current composing word,
@@ -926,6 +927,7 @@ fn diff_triple_cancel_preserves_trailing_chars() {
 
 #[cfg(test)]
 mod vcv_tests {
+    use crate::diff::Diffable;
     use crate::UltraFastViEngine;
 
     fn type_diff(e: &mut UltraFastViEngine, s: &str) -> String {
