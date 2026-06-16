@@ -4,7 +4,6 @@ use std::sync::{Mutex, MutexGuard};
 
 use crate::engine::UltraFastViEngine;
 use crate::modes::InputMethod;
-use crate::replay::ReplayEngine;
 
 /// Opaque handle to the engine. C code only ever holds a pointer to this type;
 /// the fields are intentionally not part of the C ABI.
@@ -331,22 +330,22 @@ pub extern "C" fn uvie_engine_feed_utf8(
 }
 
 // ===================================================================
-// ReplayEngine FFI (fixes single-pass limitations)
+// ReplayEngine FFI (now backed by UltraFastViEngine's feed_diff API)
 // ===================================================================
 
 pub struct UvieReplayEngine {
-    inner: Mutex<ReplayEngine>,
+    inner: Mutex<UltraFastViEngine>,
 }
 
 impl UvieReplayEngine {
     fn new() -> Self {
         Self {
-            inner: Mutex::new(ReplayEngine::new()),
+            inner: Mutex::new(UltraFastViEngine::new()),
         }
     }
 }
 
-fn lock_replay<'a>(engine: *mut UvieReplayEngine) -> Option<MutexGuard<'a, ReplayEngine>> {
+fn lock_replay<'a>(engine: *mut UvieReplayEngine) -> Option<MutexGuard<'a, UltraFastViEngine>> {
     if engine.is_null() {
         return None;
     }
@@ -425,8 +424,8 @@ pub extern "C" fn uvie_replay_feed(
         let Some(mut e) = lock_replay(engine) else {
             return 0;
         };
-        let (backspaces, output) = e.feed(c);
-        write_output(&output, out_buf, out_len);
+        let (backspaces, suffix) = e.feed_diff(c);
+        write_output(suffix, out_buf, out_len);
         backspaces
     })
     .unwrap_or(0)
@@ -447,8 +446,8 @@ pub extern "C" fn uvie_replay_backspace(
         let Some(mut e) = lock_replay(engine) else {
             return 0;
         };
-        let (backspaces, output) = e.backspace();
-        write_output(&output, out_buf, out_len);
+        let (backspaces, suffix) = e.backspace_diff();
+        write_output(suffix, out_buf, out_len);
         backspaces
     })
     .unwrap_or(0)
@@ -469,8 +468,8 @@ pub extern "C" fn uvie_replay_commit(
         let Some(mut e) = lock_replay(engine) else {
             return 0;
         };
-        let (backspaces, output) = e.commit();
-        write_output(&output, out_buf, out_len);
+        let (backspaces, suffix) = e.commit_diff();
+        write_output(suffix, out_buf, out_len);
         backspaces
     })
     .unwrap_or(0)
@@ -480,7 +479,7 @@ pub extern "C" fn uvie_replay_commit(
 pub extern "C" fn uvie_replay_reset(engine: *mut UvieReplayEngine) {
     let _ = std::panic::catch_unwind(|| {
         if let Some(mut e) = lock_replay(engine) {
-            e.reset();
+            e.reset_diff();
         }
     });
 }
@@ -493,7 +492,7 @@ pub extern "C" fn uvie_replay_is_composing(engine: *const UvieReplayEngine) -> c
         }
         let engine_ref = unsafe { &*engine };
         if let Ok(e) = engine_ref.inner.lock() {
-            if e.is_composing() { 1 } else { 0 }
+            if e.is_composing_diff() { 1 } else { 0 }
         } else {
             0
         }
@@ -515,8 +514,7 @@ pub extern "C" fn uvie_replay_committed_text(
         }
         let engine_ref = unsafe { &*engine };
         if let Ok(e) = engine_ref.inner.lock() {
-            let result = e.committed_text().to_string();
-            write_output(&result, out_buf, out_len)
+            write_output(e.committed_text_diff(), out_buf, out_len)
         } else {
             0
         }

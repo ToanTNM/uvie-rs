@@ -882,282 +882,249 @@ fn quick_telex_english_words_passthrough() {
 
 #[test]
 fn replay_compact_no_crash() {
-    // compact() + safety valve must prevent raw_buf from overflowing (capacity = 16).
-    use crate::ReplayEngine;
-    let mut e = ReplayEngine::new();
+    // Safety valve must prevent raw_chars from overflowing (capacity = 24).
+    let mut e = UltraFastViEngine::new();
 
-    // Feed 'n' then 40 'e' keys — without compaction/safety-valve this would crash.
-    e.feed('n');
+    // Feed 'n' then 40 'e' keys — without safety-valve this would crash.
+    e.feed_diff('n');
     for _ in 0..40 {
-        e.feed('e');
+        e.feed_diff('e');
     }
     // Should not crash. The exact output depends on safety-valve resets,
     // but it must be non-empty.
-    let out = e.current_composing();
+    let out = e.current_composing_diff();
     assert!(!out.is_empty(), "output should not be empty after 41 e's");
 }
 
 #[test]
 fn replay_triple_cancel_preserves_trailing_chars() {
     // After triple-cancel, subsequent characters must be preserved, not silently dropped.
-    use crate::ReplayEngine;
-    let mut e = ReplayEngine::new();
+    let mut e = UltraFastViEngine::new();
 
     // nee → nê
-    e.feed('n'); e.feed('e'); e.feed('e');
-    assert_eq!(e.current_composing(), "nê");
+    e.feed_diff('n'); e.feed_diff('e'); e.feed_diff('e');
+    assert_eq!(e.current_composing_diff(), "nê");
 
     // neee → nee (triple cancel, 3rd 'e' skipped)
-    e.feed('e');
-    assert_eq!(e.current_composing(), "nee");
+    e.feed_diff('e');
+    assert_eq!(e.current_composing_diff(), "nee");
 
     // neeeb → neeb ('b' preserved after cancel)
-    e.feed('b');
-    assert_eq!(e.current_composing(), "neeb");
+    e.feed_diff('b');
+    assert_eq!(e.current_composing_diff(), "neeb");
 
     // neeebo → neebo ('o' preserved)
-    e.feed('o');
-    assert_eq!(e.current_composing(), "neebo");
+    e.feed_diff('o');
+    assert_eq!(e.current_composing_diff(), "neebo");
 
     // neeeboo → neeboo (full word preserved)
-    e.feed('o');
-    assert_eq!(e.current_composing(), "neeboo");
+    e.feed_diff('o');
+    assert_eq!(e.current_composing_diff(), "neeboo");
 }
 
-// ===== ReplayEngine V-C-V Boundary Detection Tests =====
+// ===== V-C-V Boundary Detection Tests (feed_diff) =====
 
 #[cfg(test)]
 mod replay_tests {
-    use crate::ReplayEngine;
+    use crate::UltraFastViEngine;
 
-    fn type_replay(e: &mut ReplayEngine, s: &str) -> String {
+    fn type_diff(e: &mut UltraFastViEngine, s: &str) -> String {
         let mut screen = String::new();
         for ch in s.chars() {
-            let (bs, suffix) = e.feed(ch);
+            let (bs, suffix) = e.feed_diff(ch);
             let screen_chars: Vec<char> = screen.chars().collect();
             let new_len = screen_chars.len().saturating_sub(bs);
-            screen = screen_chars[..new_len].iter().collect::<String>() + &suffix;
+            screen = screen_chars[..new_len].iter().collect::<String>();
+            screen.push_str(suffix);
         }
         screen
     }
 
     #[test]
     fn vcv_neebo_commits_ne_starts_bo() {
-        let mut e = ReplayEngine::new();
-        assert_eq!(type_replay(&mut e, "neebo"), "nêbo");
-        assert_eq!(e.committed_text(), "nê"); // verify committed tracking
+        let mut e = UltraFastViEngine::new();
+        assert_eq!(type_diff(&mut e, "neebo"), "nêbo");
+        assert_eq!(e.committed_text_diff(), "nê");
     }
 
     #[test]
     fn vcv_neeboo_commits_ne_composes_boo() {
-        let mut e = ReplayEngine::new();
-        assert_eq!(type_replay(&mut e, "neeboo"), "nêbô");
-        assert_eq!(e.committed_text(), "nê"); // Still just "nê" committed
+        let mut e = UltraFastViEngine::new();
+        assert_eq!(type_diff(&mut e, "neeboo"), "nêbô");
+        assert_eq!(e.committed_text_diff(), "nê");
     }
 
     #[test]
     fn no_premature_commit_neeb() {
-        let mut e = ReplayEngine::new();
-        assert_eq!(type_replay(&mut e, "neeb"), "nêb");
-        assert_eq!(e.committed_text(), ""); // No auto-commit occurred
+        let mut e = UltraFastViEngine::new();
+        assert_eq!(type_diff(&mut e, "neeb"), "nêb");
+        assert_eq!(e.committed_text_diff(), "");
     }
 
     #[test]
     fn english_passthrough_unaffected() {
-        let mut e = ReplayEngine::new();
-        assert_eq!(type_replay(&mut e, "blob"), "blob");
-        assert_eq!(e.committed_text(), "");
+        let mut e = UltraFastViEngine::new();
+        assert_eq!(type_diff(&mut e, "blob"), "blob");
+        assert_eq!(e.committed_text_diff(), "");
 
-        let mut e = ReplayEngine::new();
-        assert_eq!(type_replay(&mut e, "clear"), "clear");
-        assert_eq!(e.committed_text(), "");
+        let mut e = UltraFastViEngine::new();
+        assert_eq!(type_diff(&mut e, "clear"), "clear");
+        assert_eq!(e.committed_text_diff(), "");
     }
 
     #[test]
-    fn commit_clears_composing_preserves_committed() {
-        let mut e = ReplayEngine::new();
-        type_replay(&mut e, "neebo");
-        assert_eq!(e.committed_text(), "nê");
+    fn commit_clears_composing() {
+        let mut e = UltraFastViEngine::new();
+        type_diff(&mut e, "neebo");
+        assert_eq!(e.committed_text_diff(), "nê");
 
-        e.commit();
-        assert_eq!(e.committed_text(), "nê"); // Preserved after explicit commit (for testing/debugging)
+        e.commit_diff();
+        assert_eq!(e.current_composing_diff(), "");
     }
 
     #[test]
     fn reset_clears_committed_field() {
-        let mut e = ReplayEngine::new();
-        type_replay(&mut e, "neebo");
-        assert_eq!(e.committed_text(), "nê");
+        let mut e = UltraFastViEngine::new();
+        type_diff(&mut e, "neebo");
+        assert_eq!(e.committed_text_diff(), "nê");
 
-        e.reset();
-        assert_eq!(e.committed_text(), ""); // Cleared after reset
+        e.reset_diff();
+        assert_eq!(e.committed_text_diff(), "");
     }
 
     #[test]
     fn word_boundary_clears_committed_field() {
-        let mut e = ReplayEngine::new();
-        type_replay(&mut e, "neebo");
-        assert_eq!(e.committed_text(), "nê");
+        let mut e = UltraFastViEngine::new();
+        type_diff(&mut e, "neebo");
+        assert_eq!(e.committed_text_diff(), "nê");
 
         // Type space (word boundary)
-        let (_bs, output) = e.feed(' ');
-        assert_eq!(e.committed_text(), ""); // Cleared on word boundary
-        assert_eq!(output, " ");
+        let (_bs, suffix) = e.feed_diff(' ');
+        let suffix = suffix.to_string(); // Drop borrow
+        assert_eq!(suffix, " ");
+        assert_eq!(e.committed_text_diff(), ""); // Cleared on word boundary
     }
 
     #[test]
     fn vcv_naabo_commits_na_starts_bo() {
-        let mut e = ReplayEngine::new();
-        assert_eq!(type_replay(&mut e, "naabo"), "nâbo");
-        assert_eq!(e.committed_text(), "nâ");
+        let mut e = UltraFastViEngine::new();
+        assert_eq!(type_diff(&mut e, "naabo"), "nâbo");
+        assert_eq!(e.committed_text_diff(), "nâ");
     }
 
     #[test]
     fn vcv_toocaa_commits_to_starts_ca() {
-        let mut e = ReplayEngine::new();
-        assert_eq!(type_replay(&mut e, "toocaa"), "tôcâ");
-        assert_eq!(e.committed_text(), "tô");
+        let mut e = UltraFastViEngine::new();
+        assert_eq!(type_diff(&mut e, "toocaa"), "tôcâ");
+        assert_eq!(e.committed_text_diff(), "tô");
     }
 }
 
 #[test]
 fn test_vcv_boundary_auto_commit() {
-    use crate::ReplayEngine;
-
     // --- SECTION 1: Basic neeboo case (step-by-step verification) ---
     {
-        let mut e = ReplayEngine::new();
+        let mut e = UltraFastViEngine::new();
 
         // Type 'n','e','e' → composing = "nê"
-        e.feed('n');
-        assert_eq!(e.current_composing(), "n", "after 'n': composing should be 'n'");
-        e.feed('e');
-        assert_eq!(e.current_composing(), "ne", "after 'ne': composing should be 'ne'");
-        e.feed('e');
-        assert_eq!(e.current_composing(), "nê", "after 'nee': composing should be 'nê'");
-        assert_eq!(e.committed_text(), "", "after 'nee': committed should be empty");
+        e.feed_diff('n');
+        assert_eq!(e.current_composing_diff(), "n", "after 'n': composing should be 'n'");
+        e.feed_diff('e');
+        assert_eq!(e.current_composing_diff(), "ne", "after 'ne': composing should be 'ne'");
+        e.feed_diff('e');
+        assert_eq!(e.current_composing_diff(), "nê", "after 'nee': composing should be 'nê'");
+        assert_eq!(e.committed_text_diff(), "", "after 'nee': committed should be empty");
 
         // Type 'b' → composing = "nêb" (consonant appended, not yet invalid)
-        e.feed('b');
-        assert_eq!(e.current_composing(), "nêb", "after 'neeb': composing should be 'nêb'");
-        assert_eq!(e.committed_text(), "", "after 'neeb': committed should still be empty");
+        e.feed_diff('b');
+        assert_eq!(e.current_composing_diff(), "nêb", "after 'neeb': composing should be 'nêb'");
+        assert_eq!(e.committed_text_diff(), "", "after 'neeb': committed should still be empty");
 
         // Type 'o' → V-C-V boundary detected ('nêbo' is invalid Vietnamese)
-        // TASK-001 should auto-commit 'nê' and start new syllable with 'b','o'
-        e.feed('o');
-        assert_eq!(e.current_composing(), "bo", "after 'neebo': composing should be 'bo'");
-        assert_eq!(e.committed_text(), "nê", "after 'neebo': committed should equal 'nê' (exact match)");
+        e.feed_diff('o');
+        assert_eq!(e.current_composing_diff(), "bo", "after 'neebo': composing should be 'bo'");
+        assert_eq!(e.committed_text_diff(), "nê", "after 'neebo': committed should equal 'nê' (exact match)");
 
         // Type second 'o' → composing = "bô"
-        e.feed('o');
-        assert_eq!(e.current_composing(), "bô", "after 'neeboo': composing should be 'bô'");
-        assert_eq!(e.committed_text(), "nê", "after 'neeboo': committed should still be 'nê'");
-
-        // Verify diff tuple behavior at key transition points
-        // After V-C-V commit, the diff should show the split
+        e.feed_diff('o');
+        assert_eq!(e.current_composing_diff(), "bô", "after 'neeboo': composing should be 'bô'");
+        assert_eq!(e.committed_text_diff(), "nê", "after 'neeboo': committed should still be 'nê'");
     }
 
     // --- SECTION 2: naaboo pattern (aa → â) ---
     {
-        let mut e = ReplayEngine::new();
+        let mut e = UltraFastViEngine::new();
 
-        // Type 'n','a','a' → "nâ"
-        e.feed('n');
-        e.feed('a');
-        e.feed('a');
-        assert_eq!(e.current_composing(), "nâ", "after 'naa': composing should be 'nâ'");
-        assert_eq!(e.committed_text(), "", "after 'naa': committed should be empty");
+        e.feed_diff('n');
+        e.feed_diff('a');
+        e.feed_diff('a');
+        assert_eq!(e.current_composing_diff(), "nâ", "after 'naa': composing should be 'nâ'");
+        assert_eq!(e.committed_text_diff(), "", "after 'naa': committed should be empty");
 
-        // Type 'b' → "nâb"
-        e.feed('b');
-        assert_eq!(e.current_composing(), "nâb", "after 'naab': composing should be 'nâb'");
-        assert_eq!(e.committed_text(), "", "after 'naab': committed should be empty");
+        e.feed_diff('b');
+        assert_eq!(e.current_composing_diff(), "nâb", "after 'naab': composing should be 'nâb'");
+        assert_eq!(e.committed_text_diff(), "", "after 'naab': committed should be empty");
 
-        // Type 'o' → V-C-V commit "nâ", composing "bo"
-        e.feed('o');
-        assert_eq!(e.current_composing(), "bo", "after 'naabo': composing should be 'bo'");
-        assert_eq!(e.committed_text(), "nâ", "after 'naabo': committed should equal 'nâ'");
+        e.feed_diff('o');
+        assert_eq!(e.current_composing_diff(), "bo", "after 'naabo': composing should be 'bo'");
+        assert_eq!(e.committed_text_diff(), "nâ", "after 'naabo': committed should equal 'nâ'");
 
-        // Type second 'o' → "bô"
-        e.feed('o');
-        assert_eq!(e.current_composing(), "bô", "after 'naaboo': composing should be 'bô'");
-        assert_eq!(e.committed_text(), "nâ", "after 'naaboo': committed should still be 'nâ'");
+        e.feed_diff('o');
+        assert_eq!(e.current_composing_diff(), "bô", "after 'naaboo': composing should be 'bô'");
+        assert_eq!(e.committed_text_diff(), "nâ", "after 'naaboo': committed should still be 'nâ'");
     }
 
     // --- SECTION 3: toocaa pattern (oo → ô, aa → â) ---
     {
-        let mut e = ReplayEngine::new();
+        let mut e = UltraFastViEngine::new();
 
-        // Type 't','o','o' → "tô"
-        e.feed('t');
-        e.feed('o');
-        e.feed('o');
-        assert_eq!(e.current_composing(), "tô", "after 'too': composing should be 'tô'");
-        assert_eq!(e.committed_text(), "", "after 'too': committed should be empty");
+        e.feed_diff('t');
+        e.feed_diff('o');
+        e.feed_diff('o');
+        assert_eq!(e.current_composing_diff(), "tô", "after 'too': composing should be 'tô'");
+        assert_eq!(e.committed_text_diff(), "", "after 'too': committed should be empty");
 
-        // Type 'c' → "tôc"
-        e.feed('c');
-        assert_eq!(e.current_composing(), "tôc", "after 'tooc': composing should be 'tôc'");
-        assert_eq!(e.committed_text(), "", "after 'tooc': committed should be empty");
+        e.feed_diff('c');
+        assert_eq!(e.current_composing_diff(), "tôc", "after 'tooc': composing should be 'tôc'");
+        assert_eq!(e.committed_text_diff(), "", "after 'tooc': committed should be empty");
 
-        // Type 'a' → V-C-V commit "tô", composing "ca"
-        e.feed('a');
-        assert_eq!(e.current_composing(), "ca", "after 'tooca': composing should be 'ca'");
-        assert_eq!(e.committed_text(), "tô", "after 'tooca': committed should equal 'tô'");
+        e.feed_diff('a');
+        assert_eq!(e.current_composing_diff(), "ca", "after 'tooca': composing should be 'ca'");
+        assert_eq!(e.committed_text_diff(), "tô", "after 'tooca': committed should equal 'tô'");
 
-        // Type second 'a' → "câ"
-        e.feed('a');
-        assert_eq!(e.current_composing(), "câ", "after 'toocaa': composing should be 'câ'");
-        assert_eq!(e.committed_text(), "tô", "after 'toocaa': committed should still be 'tô'");
+        e.feed_diff('a');
+        assert_eq!(e.current_composing_diff(), "câ", "after 'toocaa': composing should be 'câ'");
+        assert_eq!(e.committed_text_diff(), "tô", "after 'toocaa': committed should still be 'tô'");
     }
 
     // --- SECTION 4: English passthrough (no spurious commit) ---
     {
-        let mut e = ReplayEngine::new();
+        let mut e = UltraFastViEngine::new();
+        for ch in "blob".chars() { e.feed_diff(ch); }
+        assert_eq!(e.current_composing_diff(), "blob", "after 'blob': should be raw passthrough");
+        assert_eq!(e.committed_text_diff(), "", "after 'blob': committed should be empty");
 
-        // 'blob' - no Vietnamese modifiers, no V-C-V commit
-        for ch in "blob".chars() {
-            e.feed(ch);
-        }
-        assert_eq!(e.current_composing(), "blob", "after 'blob': should be raw passthrough");
-        assert_eq!(e.committed_text(), "", "after 'blob': committed should be empty");
-
-        let mut e2 = ReplayEngine::new();
-
-        // 'banana' - 'aa' is a valid Vietnamese modifier (→ â), so V-C-V boundary triggers
-        // Typing "bana" produces "bân", then 'n' triggers boundary detection
-        for ch in "banana".chars() {
-            e2.feed(ch);
-        }
-        // After boundary detection: "bân" is committed, "na" is composing
-        assert_eq!(e2.current_composing(), "na", "after 'banana': composing should be 'na'");
-        assert_eq!(e2.committed_text(), "bân", "after 'banana': committed should be 'bân'");
+        let mut e2 = UltraFastViEngine::new();
+        for ch in "banana".chars() { e2.feed_diff(ch); }
+        assert_eq!(e2.current_composing_diff(), "na", "after 'banana': composing should be 'na'");
+        assert_eq!(e2.committed_text_diff(), "bân", "after 'banana': committed should be 'bân'");
     }
 
     // --- SECTION 5: Multi-syllable accumulation scenarios ---
     {
-        let mut e = ReplayEngine::new();
+        let mut e = UltraFastViEngine::new();
 
-        // First V-C-V: 'neeboo' → 'nê' committed, 'bô' composing
-        for ch in "neeboo".chars() {
-            e.feed(ch);
-        }
-        assert_eq!(e.current_composing(), "bô", "after first word: composing should be 'bô'");
-        assert_eq!(e.committed_text(), "nê", "after first word: committed should be 'nê'");
+        for ch in "neeboo".chars() { e.feed_diff(ch); }
+        assert_eq!(e.current_composing_diff(), "bô", "after first word: composing should be 'bô'");
+        assert_eq!(e.committed_text_diff(), "nê", "after first word: committed should be 'nê'");
 
-        // Explicitly commit first word
-        e.commit();
-        assert_eq!(e.current_composing(), "", "after commit: composing should be empty");
-        assert_eq!(e.committed_text(), "nê", "after commit: committed should still be 'nê'");
+        e.commit_diff();
+        assert_eq!(e.current_composing_diff(), "", "after commit: composing should be empty");
 
-        // Second V-C-V: 'naaboo' → 'nâ' committed, 'bô' composing
-        for ch in "naaboo".chars() {
-            e.feed(ch);
-        }
-        assert_eq!(e.current_composing(), "bô", "after second word: composing should be 'bô'");
-        // Note: committed_text() accumulates across auto-commits (option a)
-        // After 'naaboo', we have "nê" + "nâ" = "nênâ"
-        assert_eq!(e.committed_text(), "nênâ", "after second word: committed should accumulate both words");
+        for ch in "naaboo".chars() { e.feed_diff(ch); }
+        assert_eq!(e.current_composing_diff(), "bô", "after second word: composing should be 'bô'");
+        // committed_text accumulates across auto-commits: "nê" + "nâ" = "nênâ"
+        assert_eq!(e.committed_text_diff(), "nênâ", "after second word: committed should accumulate both words");
     }
 }
 
@@ -1349,12 +1316,10 @@ fn debug_neeb_raw_len() {
 
 #[test]
 fn debug_triple_cancel_trace() {
-    use crate::ReplayEngine;
-    let mut e = ReplayEngine::new();
+    let mut e = UltraFastViEngine::new();
     for ch in "neeeb".chars() {
-        e.feed(ch);
-        let rl = e.raw_len();
-        println!("fed {:?}: current={:?} raw={}", ch, e.current_composing(), rl);
+        e.feed_diff(ch);
+        println!("fed {:?}: current={:?}", ch, e.current_composing_diff());
     }
 }
 
@@ -1392,4 +1357,88 @@ fn test_double_w_cancel() {
     let mut e = UltraFastViEngine::new(); assert_eq!(type_seq(&mut e, "uw"), "ư");
     // oww → "ow" (cancel)
     let mut e = UltraFastViEngine::new(); assert_eq!(type_seq(&mut e, "oww"), "ow");
+}
+
+// ===== feed_diff parity tests =====
+
+#[test]
+fn feed_diff_basic_neebo() {
+    let mut e = UltraFastViEngine::new();
+    let mut screen = String::new();
+    for ch in "neebo".chars() {
+        let (bs, suffix) = e.feed_diff(ch);
+        let screen_chars: Vec<char> = screen.chars().collect();
+        let new_len = screen_chars.len().saturating_sub(bs);
+        screen = screen_chars[..new_len].iter().collect::<String>();
+        screen.push_str(suffix);
+    }
+    assert_eq!(screen, "nêbo", "feed_diff neebo");
+    assert_eq!(e.committed_text_diff(), "nê");
+}
+
+#[test]
+fn feed_diff_basic_tooi() {
+    let mut e = UltraFastViEngine::new();
+    let mut screen = String::new();
+    for ch in "tooi".chars() {
+        let (bs, suffix) = e.feed_diff(ch);
+        let sc: Vec<char> = screen.chars().collect();
+        screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+        screen.push_str(suffix);
+    }
+    assert_eq!(screen, "tôi");
+    assert_eq!(e.committed_text_diff(), "");
+}
+
+#[test]
+fn feed_diff_word_boundary() {
+    let mut e = UltraFastViEngine::new();
+    let mut screen = String::new();
+    for ch in "xin chao".chars() {
+        let (bs, suffix) = e.feed_diff(ch);
+        let sc: Vec<char> = screen.chars().collect();
+        screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+        screen.push_str(suffix);
+    }
+    assert_eq!(screen, "xin chao");
+}
+
+#[test]
+fn feed_diff_english_passthrough() {
+    let mut e = UltraFastViEngine::new();
+    let mut screen = String::new();
+    for ch in "blob".chars() {
+        let (bs, suffix) = e.feed_diff(ch);
+        let sc: Vec<char> = screen.chars().collect();
+        screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+        screen.push_str(suffix);
+    }
+    assert_eq!(screen, "blob");
+    assert_eq!(e.committed_text_diff(), "");
+}
+
+#[test]
+fn feed_diff_backspace() {
+    let mut e = UltraFastViEngine::new();
+    let mut screen = String::new();
+    // Type "tooi" -> "tôi"
+    for ch in "tooi".chars() {
+        let (bs, suffix) = e.feed_diff(ch);
+        let sc: Vec<char> = screen.chars().collect();
+        screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+        screen.push_str(suffix);
+    }
+    assert_eq!(screen, "tôi");
+    // Backspace once -> "tô"
+    let (bs, suffix) = e.backspace_diff();
+    let sc: Vec<char> = screen.chars().collect();
+    screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+    screen.push_str(suffix);
+    assert_eq!(screen, "tô");
+    // Backspace again -> "to"
+    let (bs, suffix) = e.backspace_diff();
+    let sc: Vec<char> = screen.chars().collect();
+    screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+    screen.push_str(suffix);
+    assert_eq!(screen, "to");
 }
