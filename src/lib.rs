@@ -24,16 +24,6 @@ pub(crate) mod modifier;
 pub(crate) mod tone_handler;
 pub(crate) mod validation;
 
-/// Deprecated: replaced by `tables.rs` positive validation.
-///
-/// This module will be removed in a future release. It is kept temporarily
-/// so downstream code that imports `uvie::phonetics` does not break before
-/// migration is complete.
-#[deprecated(
-    since = "2.0.0",
-    note = "Use `uvie::tables` positive-pattern validation instead."
-)]
-pub mod phonetics;
 
 #[cfg(test)]
 mod tests;

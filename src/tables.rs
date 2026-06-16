@@ -1,7 +1,6 @@
 //! Positive Vietnamese syllable pattern tables.
 //!
-//! This module replaces the blacklist-based `phonetics.rs` with **positive**
-//! onset / nucleus / coda tables ported from OpenKey's `Vietnamese.cpp`.
+//! Positive onset / nucleus / coda tables ported from OpenKey's `Vietnamese.cpp`.
 //!
 //! # Validation strategy
 //!
@@ -9,8 +8,7 @@
 //!   `is_legal_onset(onset) && nucleus_tone_target(nucleus).is_some() && is_legal_coda(coda)`
 //!
 //! Anything that does not match falls through as **literal passthrough**. This
-//! automatically handles English words without any blacklist — the key
-//! architectural improvement over `phonetics.rs`.
+//! automatically handles English words without any blacklist.
 //!
 //! # Tone-target index
 //!
