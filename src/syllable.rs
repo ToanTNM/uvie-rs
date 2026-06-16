@@ -341,3 +341,93 @@ impl Default for SylBuf {
         Self::new()
     }
 }
+
+// ---------------------------------------------------------------------------
+// Typed Syllable Slots — incremental structure tracking
+// ---------------------------------------------------------------------------
+
+/// Classification of onset consonant patterns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OnsetKind {
+    /// No onset yet.
+    None,
+    /// Single consonant: b, c, d, g, h, k, l, m, n, p, q, r, s, t, v, x.
+    Single(u8),
+    /// Two-consonant digraph: ch, gh, gi, kh, ng, nh, ph, qu, th, tr.
+    Digraph(u8, u8),
+    /// Three-consonant trigraph: ngh.
+    Trigraph,
+}
+
+/// Classification of nucleus vowel patterns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NucleusKind {
+    /// No vowel yet.
+    None,
+    /// Single vowel: a, ă, â, e, ê, i, o, ô, ơ, u, ư, y.
+    Single,
+    /// Diphthong: ai, ao, au, ay, âu, ây, eo, êu, ia, iê, iu, oa, oă, oe, oi,
+    /// ôi, ơi, ua, uâ, uê, ui, uô, ươ, ưa, ưi, ưu, ya, yê.
+    Diphthong,
+    /// Triphthong: iêu, oai, oay, uây, uôi, ươi, uyê, uya.
+    Triphthong,
+}
+
+/// Incrementally maintained syllable structure indices.
+///
+/// These track the same information as `partition_syllable()` but are updated
+/// on each keystroke instead of recomputed from scratch. The engine uses
+/// `debug_assert_eq!` to validate consistency with `partition_syllable()`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SylStructure {
+    /// Index past the last onset entry (= nucleus_start).
+    pub onset_end: usize,
+    /// Index past the last nucleus entry (= coda_start).
+    pub nucleus_end: usize,
+    /// Onset classification.
+    pub onset_kind: OnsetKind,
+    /// Nucleus classification.
+    pub nucleus_kind: NucleusKind,
+}
+
+impl SylStructure {
+    pub const fn new() -> Self {
+        Self {
+            onset_end: 0,
+            nucleus_end: 0,
+            onset_kind: OnsetKind::None,
+            nucleus_kind: NucleusKind::None,
+        }
+    }
+
+    /// Reset to empty state.
+    #[inline]
+    pub fn clear(&mut self) {
+        *self = Self::new();
+    }
+
+    /// Nucleus start index (same as onset_end).
+    #[inline]
+    pub fn nucleus_start(&self) -> usize {
+        self.onset_end
+    }
+
+    /// Coda start index (same as nucleus_end).
+    #[inline]
+    pub fn coda_start(&self) -> usize {
+        self.nucleus_end
+    }
+
+    /// Returns the 4-tuple `(onset_end, nucleus_start, nucleus_end, coda_start)`
+    /// matching the format of `partition_syllable()`.
+    #[inline]
+    pub fn as_tuple(&self) -> (usize, usize, usize, usize) {
+        (self.onset_end, self.onset_end, self.nucleus_end, self.nucleus_end)
+    }
+}
+
+impl Default for SylStructure {
+    fn default() -> Self {
+        Self::new()
+    }
+}

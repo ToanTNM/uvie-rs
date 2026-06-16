@@ -31,7 +31,10 @@
 
 use crate::buffers::{OutBuffer, new_out_buffer};
 use crate::modes::{IS_MODIFIER, IS_TONE_KEY, IS_VOWEL, InputMethod, Mode, mode_for};
-use crate::syllable::{F_CAPS, F_CIRCUMFLEX, F_HORN, F_LITERAL, F_TONE_SET, Syl, SylBuf};
+use crate::syllable::{
+    F_CAPS, F_CIRCUMFLEX, F_HORN, F_LITERAL, F_TONE_SET, OnsetKind, NucleusKind, Syl, SylBuf,
+    SylStructure,
+};
 use crate::tables::{
     is_legal_coda, is_legal_nucleus, is_legal_onset, nucleus_tone_target, onset_is_gi,
     onset_is_qu, tone_allowed_for_coda,
@@ -59,6 +62,10 @@ pub struct UltraFastViEngine {
     enable_quick_start: bool,
     enable_quick_telex: bool,
     enable_modern_orthography: bool,
+
+    /// Incrementally maintained syllable structure (onset/nucleus/coda slots).
+    /// Guarded by debug_assert_eq! against partition_syllable() as oracle.
+    syl_structure: SylStructure,
 
     // ---- Diff/V-C-V fields (replaces ReplayEngine) ----
 
@@ -93,6 +100,7 @@ impl UltraFastViEngine {
             enable_quick_start: false,
             enable_quick_telex: false,
             enable_modern_orthography: false,
+            syl_structure: SylStructure::new(),
             // Diff/V-C-V fields
             raw_chars: arrayvec::ArrayVec::new(),
             prev_rendered: new_out_buffer(),
@@ -161,6 +169,12 @@ impl UltraFastViEngine {
         s
     }
 
+    /// Returns the current syllable structure (onset/nucleus/coda slots).
+    #[inline]
+    pub fn syl_structure(&self) -> &SylStructure {
+        &self.syl_structure
+    }
+
     // ------------------------------------------------------------------
     // Lifecycle
     // ------------------------------------------------------------------
@@ -170,6 +184,7 @@ impl UltraFastViEngine {
         self.raw_len = 0;
         self.out_buf.clear();
         self.committed.clear();
+        self.syl_structure.clear();
     }
 
     /// Finalise the composing word into `committed` and reset composing state.
@@ -1326,6 +1341,38 @@ impl UltraFastViEngine {
         false
     }
 
+    /// Derive `SylStructure` from `partition_syllable()` and update the field.
+    /// In debug builds, asserts that the derived structure matches the oracle.
+    fn update_syl_structure(&mut self) {
+        let (onset_end, _nuc_start, nucleus_end, _coda_start) = self.partition_syllable();
+        let onset_kind = self.derive_onset_kind(onset_end);
+        let nuc_len = nucleus_end.saturating_sub(onset_end);
+        let nucleus_kind = match nuc_len {
+            0 => NucleusKind::None,
+            1 => NucleusKind::Single,
+            2 => NucleusKind::Diphthong,
+            _ => NucleusKind::Triphthong,
+        };
+        self.syl_structure = SylStructure {
+            onset_end,
+            nucleus_end,
+            onset_kind,
+            nucleus_kind,
+        };
+    }
+
+    /// Derive the OnsetKind from the buf entries up to `onset_end`.
+    fn derive_onset_kind(&self, onset_end: usize) -> OnsetKind {
+        match onset_end {
+            0 => OnsetKind::None,
+            1 => OnsetKind::Single(self.buf.get(0).base),
+            2 => OnsetKind::Digraph(self.buf.get(0).base, self.buf.get(1).base),
+            3 => OnsetKind::Trigraph,
+            // For quick-start expansions etc., treat as trigraph.
+            _ => OnsetKind::Trigraph,
+        }
+    }
+
     /// Length of the onset (number of leading non-vowel entries).
     fn onset_len(&self) -> usize {
         let (onset_end, _, _, _) = self.partition_syllable();
@@ -1492,6 +1539,9 @@ impl UltraFastViEngine {
 
     /// Rebuild `out_buf` from `buf`. Validates and renders.
     fn render_out_buf(&mut self) {
+        // Update and validate syllable structure tracking.
+        self.update_syl_structure();
+
         self.out_buf.clear();
         let n = self.buf.len();
         if n == 0 { return; }

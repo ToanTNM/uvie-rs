@@ -35,3 +35,4 @@ pub mod ffi;
 
 pub use crate::engine::UltraFastViEngine;
 pub use crate::modes::{InputMethod, ModeTrait, TelexMode, VniMode};
+pub use crate::syllable::{NucleusKind, OnsetKind, SylStructure};

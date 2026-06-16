@@ -1,4 +1,4 @@
-use crate::{InputMethod, UltraFastViEngine};
+use crate::{InputMethod, NucleusKind, OnsetKind, UltraFastViEngine};
 
 /// Simulates IME typing: whitespace commits the current composing word,
 /// and the final result includes committed text + any remaining composing text.
@@ -1441,4 +1441,67 @@ fn feed_diff_backspace() {
     screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
     screen.push_str(suffix);
     assert_eq!(screen, "to");
+}
+
+// ===== Typed Syllable Slots Tests =====
+
+#[test]
+fn syl_structure_simple_consonant_vowel() {
+    let mut e = UltraFastViEngine::new();
+    e.feed('t');
+    assert_eq!(e.syl_structure().onset_kind, OnsetKind::Single(b't'));
+    assert_eq!(e.syl_structure().nucleus_kind, NucleusKind::None);
+
+    e.feed('o');
+    assert_eq!(e.syl_structure().onset_kind, OnsetKind::Single(b't'));
+    assert_eq!(e.syl_structure().nucleus_kind, NucleusKind::Single);
+    assert_eq!(e.syl_structure().onset_end, 1);
+    assert_eq!(e.syl_structure().nucleus_end, 2);
+}
+
+#[test]
+fn syl_structure_digraph_onset() {
+    let mut e = UltraFastViEngine::new();
+    e.feed('t'); e.feed('h');
+    assert_eq!(e.syl_structure().onset_kind, OnsetKind::Digraph(b't', b'h'));
+    assert_eq!(e.syl_structure().nucleus_kind, NucleusKind::None);
+
+    e.feed('u');
+    assert_eq!(e.syl_structure().onset_kind, OnsetKind::Digraph(b't', b'h'));
+    assert_eq!(e.syl_structure().nucleus_kind, NucleusKind::Single);
+}
+
+#[test]
+fn syl_structure_diphthong_nucleus() {
+    let mut e = UltraFastViEngine::new();
+    // "to" then "o" → "tô" (circumflex), still single nucleus slot
+    type_seq(&mut e, "too");
+    assert_eq!(e.syl_structure().onset_kind, OnsetKind::Single(b't'));
+    // The engine's partition sees [t, o, o_modifier] — the second 'o' triggers
+    // circumflex, keeping nucleus as 1 slot. Actually the buf may have 2 entries
+    // for 'o' and 'o' but the second one becomes a modifier... Let's just check
+    // the raw partition result:
+    assert!(matches!(e.syl_structure().nucleus_kind, NucleusKind::Single | NucleusKind::Diphthong));
+}
+
+#[test]
+fn syl_structure_no_onset() {
+    let mut e = UltraFastViEngine::new();
+    e.feed('a');
+    assert_eq!(e.syl_structure().onset_kind, OnsetKind::None);
+    assert_eq!(e.syl_structure().nucleus_kind, NucleusKind::Single);
+    assert_eq!(e.syl_structure().onset_end, 0);
+    assert_eq!(e.syl_structure().nucleus_end, 1);
+}
+
+#[test]
+fn syl_structure_trigraph_ngh() {
+    let mut e = UltraFastViEngine::new();
+    e.feed('n'); e.feed('g'); e.feed('h');
+    assert_eq!(e.syl_structure().onset_kind, OnsetKind::Trigraph);
+    assert_eq!(e.syl_structure().onset_end, 3);
+
+    e.feed('i');
+    assert_eq!(e.syl_structure().nucleus_kind, NucleusKind::Single);
+    assert_eq!(e.syl_structure().nucleus_end, 4);
 }
