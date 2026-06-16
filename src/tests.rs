@@ -1505,3 +1505,66 @@ fn syl_structure_trigraph_ngh() {
     assert_eq!(e.syl_structure().nucleus_kind, NucleusKind::Single);
     assert_eq!(e.syl_structure().nucleus_end, 4);
 }
+
+// ---------------------------------------------------------------------------
+// Uppercase / F_CAPS tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn uppercase_circumflex_oo() {
+    let mut e = UltraFastViEngine::new();
+    // Shift+O twice → Ô (uppercase circumflex O)
+    assert_eq!(type_seq(&mut e, "OO"), "Ô");
+}
+
+#[test]
+fn uppercase_circumflex_aa() {
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "AA"), "Â");
+}
+
+#[test]
+fn uppercase_circumflex_ee() {
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "EE"), "Ê");
+}
+
+#[test]
+fn uppercase_horn_ow() {
+    let mut e = UltraFastViEngine::new();
+    // Shift+O then W → Ơ (uppercase horn O)
+    assert_eq!(type_seq(&mut e, "OW"), "Ơ");
+}
+
+#[test]
+fn uppercase_horn_uw() {
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "UW"), "Ư");
+}
+
+#[test]
+fn uppercase_breve_aw() {
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "AW"), "Ă");
+}
+
+#[test]
+fn uppercase_circumflex_with_tone() {
+    let mut e = UltraFastViEngine::new();
+    // OOs → Ố (uppercase circumflex O with sắc)
+    assert_eq!(type_seq(&mut e, "OOs"), "Ố");
+}
+
+#[test]
+fn mixed_case_circumflex_first_upper() {
+    let mut e = UltraFastViEngine::new();
+    // First char uppercase, second lowercase: Oo → Ô
+    assert_eq!(type_seq(&mut e, "Oo"), "Ô");
+}
+
+#[test]
+fn mixed_case_horn_first_upper() {
+    let mut e = UltraFastViEngine::new();
+    // First char uppercase, second lowercase: Ow → Ơ
+    assert_eq!(type_seq(&mut e, "Ow"), "Ơ");
+}

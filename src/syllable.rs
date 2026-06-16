@@ -110,6 +110,9 @@ impl Syl {
         self.flags |= F_CIRCUMFLEX;
         self.flags &= !F_HORN;
         self.out = circumflex_base(self.base);
+        if self.flags & F_CAPS != 0 {
+            self.out = self.out.to_uppercase().next().unwrap_or(self.out);
+        }
         // Re-apply tone if already set.
         if self.flags & F_TONE_SET != 0 {
             self.out = map_vowel_with_tone(self.out, self.tone);
@@ -123,6 +126,9 @@ impl Syl {
         self.flags |= F_HORN;
         self.flags &= !F_CIRCUMFLEX;
         self.out = horn_base(self.base);
+        if self.flags & F_CAPS != 0 {
+            self.out = self.out.to_uppercase().next().unwrap_or(self.out);
+        }
         if self.flags & F_TONE_SET != 0 {
             self.out = map_vowel_with_tone(self.out, self.tone);
         }
