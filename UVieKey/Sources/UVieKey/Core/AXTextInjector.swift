@@ -3,19 +3,19 @@ import ApplicationServices
 
 /// Injects text via Accessibility API (AXUIElement) instead of CGEventTap.
 /// Used for apps where synthetic key events don't work (Spotlight, some secure fields).
+///
+/// Shares the same `EngineBridge` instance as `EventTap` so that configuration
+/// (input method, quick modes, modern orthography) is always consistent.
 final class AXTextInjector {
-    private let _engine = EngineBridge()
-    var engine: EngineBridge { _engine }
+    private let engine: EngineBridge
 
     /// Cached focused element to avoid repeated lookups.
     private weak var cachedElement: AXUIElement?
     private var lastElementPID: pid_t = 0
 
-    // MARK: - Engine config pass-through
-
-    func setInputMethod(_ method: InputMethod) { _engine.setInputMethod(method) }
-    func setQuickStart(_ enabled: Bool) { _engine.setQuickStart(enabled) }
-    func setQuickTelex(_ enabled: Bool) { _engine.setQuickTelex(enabled) }
+    init(engine: EngineBridge) {
+        self.engine = engine
+    }
 
     // MARK: - Keystroke handling
 
@@ -23,7 +23,7 @@ final class AXTextInjector {
     func feed(char: Character) -> Bool {
         guard let element = getFocusedTextElement() else { return false }
 
-        let (bs, out) = _engine.feed(char: char)
+        let (bs, out) = engine.feed(char: char)
         guard bs > 0 || !out.isEmpty else {
             // No change — but we still need to show the character
             // (happens when engine returns empty for a literal char)
@@ -45,7 +45,7 @@ final class AXTextInjector {
     func backspace() -> Bool {
         guard let element = getFocusedTextElement() else { return false }
 
-        let (bs, out) = _engine.backspace()
+        let (bs, out) = engine.backspace()
         guard bs > 0 || !out.isEmpty else { return false }
 
         guard let current = getTextValue(element) else { return false }
@@ -61,11 +61,11 @@ final class AXTextInjector {
 
     /// Commit on word boundary.
     func commit() {
-        _ = _engine.commit()
+        _ = engine.commit()
     }
 
     func reset() {
-        _engine.reset()
+        engine.reset()
     }
 
     // MARK: - AX Helpers

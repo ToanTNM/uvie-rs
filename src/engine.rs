@@ -67,9 +67,9 @@ pub struct UltraFastViEngine {
     /// Guarded by debug_assert_eq! against partition_syllable() as oracle.
     syl_structure: SylStructure,
 
-    // ---- Diff/V-C-V fields (replaces ReplayEngine) ----
+    // ---- Diff/V-C-V fields ----
 
-    /// Raw keystroke buffer for feed_diff (chars, not bytes; needed for V-C-V replay).
+    /// Raw keystroke buffer for feed_diff (chars, not bytes; needed for V-C-V split).
     raw_chars: arrayvec::ArrayVec<char, 24>,
     /// Composing text currently visible on screen (for diffing).
     prev_rendered: OutBuffer,
@@ -153,7 +153,7 @@ impl UltraFastViEngine {
     pub fn current_composing(&self) -> &str { &self.out_buf }
 
     /// Returns the classify flags for a raw byte in the current input mode.
-    /// Used by ReplayEngine helpers to check if a char is a tone key.
+    /// Used by diff helpers to check if a char is a tone key.
     #[inline]
     pub fn mode_classify(&self, b: u8) -> u8 {
         self.mode.classify[b as usize]
@@ -199,7 +199,7 @@ impl UltraFastViEngine {
     /// Delete the last typed key (backspace). Returns the new composing text.
     pub fn backspace(&mut self) -> &str {
         if self.raw_len > 0 {
-            // Decrement raw_len and replay buf from scratch. We can't just
+            // Decrement raw_len and re-render buf from scratch. We can't just
             // buf.pop() because modifier keys may map 2 raw bytes to 1 buf entry
             // (e.g. "oo"→"ô": raw_len=2, buf=[ô]; backspace should give "o" not "").
             self.raw_len -= 1;
@@ -223,7 +223,7 @@ impl UltraFastViEngine {
     }
 
     // ------------------------------------------------------------------
-    // Diff-based API (replaces ReplayEngine)
+    // Diff-based API
     // ------------------------------------------------------------------
 
     /// Feed one char in diff mode. Returns `(backspace_count, suffix_to_type)`.
@@ -341,8 +341,8 @@ impl UltraFastViEngine {
                 let new_syl_raw: arrayvec::ArrayVec<char, 24> =
                     self.raw_chars[split..].iter().copied().collect();
 
-                // Replay committed prefix through fresh state.
-                let committed_out = Self::replay_chars(&committed_raw, self.mode);
+                // Re-render committed prefix through fresh state.
+                let committed_out = Self::rerender_chars(&committed_raw, self.mode);
 
                 // Commit first syllable.
                 let _ = self.diff_committed.push_str(&committed_out);
@@ -547,8 +547,8 @@ impl UltraFastViEngine {
         0
     }
 
-    /// Replay a slice of chars through a fresh engine and return rendered output.
-    fn replay_chars(raw: &[char], mode: &'static Mode) -> OutBuffer {
+    /// Re-render a slice of chars through a fresh engine and return rendered output.
+    fn rerender_chars(raw: &[char], mode: &'static Mode) -> OutBuffer {
         let mut eng = UltraFastViEngine::new();
         eng.mode = mode;
         for &c in raw {

@@ -83,9 +83,9 @@ UVieKey/
 │   ├── App/
 │   │   └── UVieKeyApp.swift          # @main entry point
 │   ├── Core/
-│   │   ├── EngineBridge.swift        # FFI wrapper
+│   │   ├── EngineBridge.swift        # FFI wrapper (diff-based API)
 │   │   ├── EventTap.swift            # CGEventTap handler
-│   │   └── TextDiff.swift            # Backspace-replacement
+│   │   └── AXTextInjector.swift     # Accessibility injection (Spotlight)
 │   ├── UI/
 │   │   ├── MenuBarController.swift   # Status bar icon
 │   │   ├── SettingsWindow.swift     # Preferences

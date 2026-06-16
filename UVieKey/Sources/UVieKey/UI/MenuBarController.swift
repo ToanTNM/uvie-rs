@@ -17,7 +17,9 @@ final class MenuBarController: ObservableObject {
         get { inputMethodManager?.inputMethod ?? .telex }
         set {
             inputMethodManager?.inputMethod = newValue
-            eventTap?.engine.setInputMethod(newValue)
+            // Route through applyEngineSettings so the shared engine
+            // (used by both EventTap and AXTextInjector) is updated.
+            eventTap?.applyEngineSettings()
         }
     }
 

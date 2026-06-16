@@ -1,4 +1,4 @@
-//! Integration tests for UltraFastViEngine::feed_diff — parity with ReplayEngine.
+//! Integration tests for UltraFastViEngine::feed_diff — diff-based API.
 
 use uvie::{InputMethod, UltraFastViEngine};
 

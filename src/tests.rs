@@ -881,7 +881,7 @@ fn quick_telex_english_words_passthrough() {
 }
 
 #[test]
-fn replay_compact_no_crash() {
+fn diff_compact_no_crash() {
     // Safety valve must prevent raw_chars from overflowing (capacity = 24).
     let mut e = UltraFastViEngine::new();
 
@@ -897,7 +897,7 @@ fn replay_compact_no_crash() {
 }
 
 #[test]
-fn replay_triple_cancel_preserves_trailing_chars() {
+fn diff_triple_cancel_preserves_trailing_chars() {
     // After triple-cancel, subsequent characters must be preserved, not silently dropped.
     let mut e = UltraFastViEngine::new();
 
@@ -925,7 +925,7 @@ fn replay_triple_cancel_preserves_trailing_chars() {
 // ===== V-C-V Boundary Detection Tests (feed_diff) =====
 
 #[cfg(test)]
-mod replay_tests {
+mod vcv_tests {
     use crate::UltraFastViEngine;
 
     fn type_diff(e: &mut UltraFastViEngine, s: &str) -> String {

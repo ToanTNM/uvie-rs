@@ -75,20 +75,28 @@ final class EventTap: ObservableObject {
 
     let inputMethodManager: InputMethodManager
     private let appDetector = AppContextDetector()
-    private let axInjector = AXTextInjector()
+    private let axInjector: AXTextInjector
 
     /// Tag synthetic events so we don't process our own output.
     private let syntheticTag: Int64 = 0x55564945 // "UVIE"
 
+    /// Observer token for UserDefaults runtime changes.
+    private var defaultsObserver: NSObjectProtocol?
+
     init(inputMethodManager: InputMethodManager) {
         self.inputMethodManager = inputMethodManager
+        self.axInjector = AXTextInjector(engine: _engine)
         eventSource = CGEventSource(stateID: .privateState)
-        loadSettings()
+        applyEngineSettings()
+        observeSettingsChanges()
     }
 
     deinit {
         stop()
         appDetector.stop()
+        if let defaultsObserver {
+            NotificationCenter.default.removeObserver(defaultsObserver)
+        }
     }
 
     // MARK: - Lifecycle
@@ -149,12 +157,27 @@ final class EventTap: ObservableObject {
 
     // MARK: - Settings
 
-    private func loadSettings() {
+    /// Read all engine-relevant settings from UserDefaults and push to the
+    /// shared engine. Called on init and whenever defaults change at runtime.
+    func applyEngineSettings() {
         let defaults = UserDefaults.standard
         let method = defaults.string(forKey: DefaultsKey.inputMethod) ?? "telex"
         _engine.setInputMethod(method == "vni" ? .vni : .telex)
         _engine.setQuickStart(defaults.bool(forKey: DefaultsKey.quickStart))
         _engine.setQuickTelex(defaults.bool(forKey: DefaultsKey.quickTelex))
+        _engine.setModernOrthography(defaults.bool(forKey: DefaultsKey.modernOrthography))
+    }
+
+    /// Observe runtime setting changes so toggling Quick Telex, Modern
+    /// Orthography, etc. in Settings takes effect without restart.
+    private func observeSettingsChanges() {
+        defaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyEngineSettings()
+        }
     }
 
     // MARK: - Event Handling

@@ -5,21 +5,30 @@ use std::sync::{Mutex, MutexGuard};
 use crate::engine::UltraFastViEngine;
 use crate::modes::InputMethod;
 
+// ===================================================================
+// Single opaque engine type — diff-based API
+// ===================================================================
+
 /// Opaque handle to the engine. C code only ever holds a pointer to this type;
 /// the fields are intentionally not part of the C ABI.
+///
+/// All `feed`/`backspace`/`commit` functions use the diff API: they return
+/// a backspace count and write the new suffix into a caller-provided buffer.
 pub struct UvieEngine {
     inner: Mutex<UltraFastViEngine>,
-    pending_utf8: Mutex<Vec<u8>>,
 }
 
 impl UvieEngine {
     fn new() -> Self {
         Self {
             inner: Mutex::new(UltraFastViEngine::new()),
-            pending_utf8: Mutex::new(Vec::with_capacity(4)),
         }
     }
 }
+
+// ===================================================================
+// Internal helpers
+// ===================================================================
 
 fn lock_engine<'a>(engine: *mut UvieEngine) -> Option<MutexGuard<'a, UltraFastViEngine>> {
     if engine.is_null() {
@@ -35,20 +44,6 @@ fn lock_engine_const<'a>(engine: *const UvieEngine) -> Option<MutexGuard<'a, Ult
     }
     let engine_ref = unsafe { &*engine };
     engine_ref.inner.lock().ok()
-}
-
-fn lock_pending<'a>(engine: *mut UvieEngine) -> Option<MutexGuard<'a, Vec<u8>>> {
-    if engine.is_null() {
-        return None;
-    }
-    let engine_ref = unsafe { &*engine };
-    engine_ref.pending_utf8.lock().ok()
-}
-
-fn clear_pending(engine: *mut UvieEngine) {
-    if let Some(mut pending) = lock_pending(engine) {
-        pending.clear();
-    }
 }
 
 fn utf8_prefix_len(bytes: &[u8], max_len: usize) -> usize {
@@ -88,41 +83,9 @@ fn write_output(out: &str, out_buf: *mut c_char, out_len: usize) -> usize {
     write_len
 }
 
-fn decode_utf8_char(engine: *mut UvieEngine, byte: u8) -> Option<char> {
-    if byte < 0x80 {
-        if let Some(mut pending) = lock_pending(engine) {
-            pending.clear();
-        }
-        return Some(byte as char);
-    }
-
-    let mut pending = lock_pending(engine)?;
-    pending.push(byte);
-    if pending.len() > 4 {
-        pending.clear();
-        return None;
-    }
-
-    match std::str::from_utf8(&pending) {
-        Ok(s) => {
-            let mut it = s.chars();
-            let ch = it.next();
-            if ch.is_some() && it.next().is_none() {
-                pending.clear();
-                ch
-            } else {
-                pending.clear();
-                None
-            }
-        }
-        Err(err) => {
-            if err.error_len().is_some() {
-                pending.clear();
-            }
-            None
-        }
-    }
-}
+// ===================================================================
+// Lifecycle
+// ===================================================================
 
 #[unsafe(no_mangle)]
 pub extern "C" fn uvie_engine_new() -> *mut UvieEngine {
@@ -136,36 +99,19 @@ pub extern "C" fn uvie_engine_free(engine: *mut UvieEngine) {
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_engine_clear(engine: *mut UvieEngine) {
-    let _ = std::panic::catch_unwind(|| {
-        clear_pending(engine);
-        if let Some(mut e) = lock_engine(engine) {
-            e.clear();
-        }
-    });
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_engine_commit(engine: *mut UvieEngine) {
-    let _ = std::panic::catch_unwind(|| {
-        clear_pending(engine);
-        if let Some(mut e) = lock_engine(engine) {
-            e.commit();
-        }
-    });
-}
+// ===================================================================
+// Configuration
+// ===================================================================
 
 #[unsafe(no_mangle)]
 pub extern "C" fn uvie_engine_set_input_method(engine: *mut UvieEngine, method: c_int) {
     let _ = std::panic::catch_unwind(|| {
-        clear_pending(engine);
         if let Some(mut e) = lock_engine(engine) {
-        let m = match method {
-            0 => InputMethod::Telex,
-            1 => InputMethod::Vni,
-            _ => return,
-        };
+            let m = match method {
+                0 => InputMethod::Telex,
+                1 => InputMethod::Vni,
+                _ => return,
+            };
             e.set_input_method(m);
         }
     });
@@ -178,8 +124,8 @@ pub extern "C" fn uvie_engine_get_input_method(engine: *const UvieEngine) -> c_i
             return -1;
         };
         match e.input_method() {
-            InputMethod::Vni => 1,
             InputMethod::Telex => 0,
+            InputMethod::Vni => 1,
         }
     })
     .unwrap_or(-1)
@@ -212,206 +158,16 @@ pub extern "C" fn uvie_engine_set_modern_orthography(engine: *mut UvieEngine, en
     });
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_engine_backspace(
-    engine: *mut UvieEngine,
-    out_buf: *mut c_char,
-    out_len: usize,
-) -> usize {
-    std::panic::catch_unwind(|| {
-        clear_pending(engine);
-        let Some(mut e) = lock_engine(engine) else {
-            return 0;
-        };
-        let result = e.backspace().to_string();
-        write_output(&result, out_buf, out_len)
-    })
-    .unwrap_or(0)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_engine_is_composing(engine: *const UvieEngine) -> c_int {
-    std::panic::catch_unwind(|| {
-        let Some(e) = lock_engine_const(engine) else {
-            return 0;
-        };
-        if e.is_composing() { 1 } else { 0 }
-    })
-    .unwrap_or(0)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_engine_is_empty(engine: *const UvieEngine) -> c_int {
-    std::panic::catch_unwind(|| {
-        let Some(e) = lock_engine_const(engine) else {
-            return 1;
-        };
-        if e.is_empty() { 1 } else { 0 }
-    })
-    .unwrap_or(1)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_engine_current_output(
-    engine: *const UvieEngine,
-    out_buf: *mut c_char,
-    out_len: usize,
-) -> usize {
-    std::panic::catch_unwind(|| {
-        let Some(e) = lock_engine_const(engine) else {
-            return 0;
-        };
-        let result = e.current_output();
-        write_output(&result, out_buf, out_len)
-    })
-    .unwrap_or(0)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_engine_current_composing(
-    engine: *const UvieEngine,
-    out_buf: *mut c_char,
-    out_len: usize,
-) -> usize {
-    std::panic::catch_unwind(|| {
-        let Some(e) = lock_engine_const(engine) else {
-            return 0;
-        };
-        let result = e.current_composing().to_string();
-        write_output(&result, out_buf, out_len)
-    })
-    .unwrap_or(0)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_engine_committed_text(
-    engine: *const UvieEngine,
-    out_buf: *mut c_char,
-    out_len: usize,
-) -> usize {
-    std::panic::catch_unwind(|| {
-        let Some(e) = lock_engine_const(engine) else {
-            return 0;
-        };
-        let result = e.committed_text().to_string();
-        write_output(&result, out_buf, out_len)
-    })
-    .unwrap_or(0)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_engine_feed_utf8(
-    engine: *mut UvieEngine,
-    ch: u8,
-    out_buf: *mut c_char,
-    out_len: usize,
-) -> usize {
-    std::panic::catch_unwind(|| {
-        if engine.is_null() || out_buf.is_null() || out_len == 0 {
-            return 0;
-        }
-
-        let decoded = decode_utf8_char(engine, ch);
-
-        let Some(mut e) = lock_engine(engine) else {
-            return 0;
-        };
-
-        let result = if let Some(c) = decoded {
-            e.feed(c)
-        } else {
-            e.current_composing()
-        }
-        .to_string();
-
-        write_output(&result, out_buf, out_len)
-    })
-    .unwrap_or(0)
-}
-
 // ===================================================================
-// ReplayEngine FFI (now backed by UltraFastViEngine's feed_diff API)
+// Diff-based keystroke API
 // ===================================================================
 
-pub struct UvieReplayEngine {
-    inner: Mutex<UltraFastViEngine>,
-}
-
-impl UvieReplayEngine {
-    fn new() -> Self {
-        Self {
-            inner: Mutex::new(UltraFastViEngine::new()),
-        }
-    }
-}
-
-fn lock_replay<'a>(engine: *mut UvieReplayEngine) -> Option<MutexGuard<'a, UltraFastViEngine>> {
-    if engine.is_null() {
-        return None;
-    }
-    let engine_ref = unsafe { &*engine };
-    engine_ref.inner.lock().ok()
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_replay_new() -> *mut UvieReplayEngine {
-    Box::into_raw(Box::new(UvieReplayEngine::new()))
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_replay_free(engine: *mut UvieReplayEngine) {
-    if !engine.is_null() {
-        unsafe { drop(Box::from_raw(engine)); }
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_replay_set_input_method(engine: *mut UvieReplayEngine, method: c_int) {
-    let _ = std::panic::catch_unwind(|| {
-        if let Some(mut e) = lock_replay(engine) {
-            let m = match method {
-                0 => InputMethod::Telex,
-                1 => InputMethod::Vni,
-                _ => return,
-            };
-            e.set_input_method(m);
-        }
-    });
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_replay_set_quick_start(engine: *mut UvieReplayEngine, enabled: c_int) {
-    let _ = std::panic::catch_unwind(|| {
-        if let Some(mut e) = lock_replay(engine) {
-            e.set_quick_start(enabled != 0);
-        }
-    });
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_replay_set_quick_telex(engine: *mut UvieReplayEngine, enabled: c_int) {
-    let _ = std::panic::catch_unwind(|| {
-        if let Some(mut e) = lock_replay(engine) {
-            e.set_quick_telex(enabled != 0);
-        }
-    });
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_replay_set_modern_orthography(engine: *mut UvieReplayEngine, enabled: c_int) {
-    let _ = std::panic::catch_unwind(|| {
-        if let Some(mut e) = lock_replay(engine) {
-            e.set_modern_orthography(enabled != 0);
-        }
-    });
-}
-
-/// Feed a single UTF-8 character.
+/// Feed a single ASCII character.
 /// Returns the number of backspaces the caller must send,
-/// and writes the new output string into `out_buf`.
+/// and writes the new output suffix into `out_buf`.
 #[unsafe(no_mangle)]
-pub extern "C" fn uvie_replay_feed(
-    engine: *mut UvieReplayEngine,
+pub extern "C" fn uvie_engine_feed(
+    engine: *mut UvieEngine,
     ch: c_char,
     out_buf: *mut c_char,
     out_len: usize,
@@ -421,7 +177,7 @@ pub extern "C" fn uvie_replay_feed(
             return 0;
         }
         let c = ch as u8 as char;
-        let Some(mut e) = lock_replay(engine) else {
+        let Some(mut e) = lock_engine(engine) else {
             return 0;
         };
         let (backspaces, suffix) = e.feed_diff(c);
@@ -432,10 +188,10 @@ pub extern "C" fn uvie_replay_feed(
 }
 
 /// Handle backspace.
-/// Returns backspace count, writes new output into `out_buf`.
+/// Returns backspace count, writes new output suffix into `out_buf`.
 #[unsafe(no_mangle)]
-pub extern "C" fn uvie_replay_backspace(
-    engine: *mut UvieReplayEngine,
+pub extern "C" fn uvie_engine_backspace(
+    engine: *mut UvieEngine,
     out_buf: *mut c_char,
     out_len: usize,
 ) -> usize {
@@ -443,7 +199,7 @@ pub extern "C" fn uvie_replay_backspace(
         if engine.is_null() || out_buf.is_null() || out_len == 0 {
             return 0;
         }
-        let Some(mut e) = lock_replay(engine) else {
+        let Some(mut e) = lock_engine(engine) else {
             return 0;
         };
         let (backspaces, suffix) = e.backspace_diff();
@@ -453,11 +209,11 @@ pub extern "C" fn uvie_replay_backspace(
     .unwrap_or(0)
 }
 
-/// Commit the current word (call on space / punctuation).
-/// Returns backspace count (usually 0), clears output buffer.
+/// Commit the current word (call on space / punctuation / break key).
+/// Returns backspace count (usually 0), writes output into `out_buf`.
 #[unsafe(no_mangle)]
-pub extern "C" fn uvie_replay_commit(
-    engine: *mut UvieReplayEngine,
+pub extern "C" fn uvie_engine_commit(
+    engine: *mut UvieEngine,
     out_buf: *mut c_char,
     out_len: usize,
 ) -> usize {
@@ -465,7 +221,7 @@ pub extern "C" fn uvie_replay_commit(
         if engine.is_null() || out_buf.is_null() || out_len == 0 {
             return 0;
         }
-        let Some(mut e) = lock_replay(engine) else {
+        let Some(mut e) = lock_engine(engine) else {
             return 0;
         };
         let (backspaces, suffix) = e.commit_diff();
@@ -475,36 +231,36 @@ pub extern "C" fn uvie_replay_commit(
     .unwrap_or(0)
 }
 
+/// Reset all engine state (composing + committed + diff tracking).
 #[unsafe(no_mangle)]
-pub extern "C" fn uvie_replay_reset(engine: *mut UvieReplayEngine) {
+pub extern "C" fn uvie_engine_reset(engine: *mut UvieEngine) {
     let _ = std::panic::catch_unwind(|| {
-        if let Some(mut e) = lock_replay(engine) {
+        if let Some(mut e) = lock_engine(engine) {
             e.reset_diff();
         }
     });
 }
 
+// ===================================================================
+// Introspection
+// ===================================================================
+
 #[unsafe(no_mangle)]
-pub extern "C" fn uvie_replay_is_composing(engine: *const UvieReplayEngine) -> c_int {
+pub extern "C" fn uvie_engine_is_composing(engine: *const UvieEngine) -> c_int {
     std::panic::catch_unwind(|| {
-        if engine.is_null() {
+        let Some(e) = lock_engine_const(engine) else {
             return 0;
-        }
-        let engine_ref = unsafe { &*engine };
-        if let Ok(e) = engine_ref.inner.lock() {
-            if e.is_composing_diff() { 1 } else { 0 }
-        } else {
-            0
-        }
+        };
+        if e.is_composing_diff() { 1 } else { 0 }
     })
     .unwrap_or(0)
 }
 
-/// Get the accumulated committed text (auto-committed syllables).
+/// Get the accumulated committed text (auto-committed syllables from V-C-V).
 /// Returns byte count of written string (excluding null terminator).
 #[unsafe(no_mangle)]
-pub extern "C" fn uvie_replay_committed_text(
-    engine: *const UvieReplayEngine,
+pub extern "C" fn uvie_engine_committed_text(
+    engine: *const UvieEngine,
     out_buf: *mut c_char,
     out_len: usize,
 ) -> usize {
@@ -512,12 +268,10 @@ pub extern "C" fn uvie_replay_committed_text(
         if engine.is_null() || out_buf.is_null() || out_len == 0 {
             return 0;
         }
-        let engine_ref = unsafe { &*engine };
-        if let Ok(e) = engine_ref.inner.lock() {
-            write_output(e.committed_text_diff(), out_buf, out_len)
-        } else {
-            0
-        }
+        let Some(e) = lock_engine_const(engine) else {
+            return 0;
+        };
+        write_output(e.committed_text_diff(), out_buf, out_len)
     })
     .unwrap_or(0)
 }
