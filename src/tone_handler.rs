@@ -13,6 +13,7 @@ pub(crate) trait ToneHandler {
 }
 
 impl ToneHandler for UltraFastViEngine {
+    #[inline]
     fn handle_tone_key(&mut self, b: u8, caps: bool) {
         let tone_val = self.mode.tone[b as usize];
 
@@ -88,6 +89,7 @@ impl ToneHandler for UltraFastViEngine {
         }
     }
 
+    #[inline]
     fn tone_carrier_idx(&self) -> Option<usize> {
         let n = self.buf.len();
 
@@ -149,6 +151,7 @@ impl ToneHandler for UltraFastViEngine {
         }
     }
 
+    #[inline]
     fn reapply_tone_after_nucleus_change(&mut self) {
         let (_, nucleus_start, nucleus_end, _) = self.partition_syllable();
         let mut tone_val: Option<u8> = None;

@@ -18,6 +18,7 @@ pub(crate) trait Composable {
 }
 
 impl Composable for UltraFastViEngine {
+    #[inline]
     fn process_key(&mut self, b: u8, caps: bool) {
         let attr = self.mode.classify[b as usize];
 
@@ -32,10 +33,12 @@ impl Composable for UltraFastViEngine {
         }
     }
 
+    #[inline]
     fn handle_consonant(&mut self, b: u8, caps: bool) {
         self.buf.push(Syl::literal(b, caps));
     }
 
+    #[inline]
     fn handle_vowel(&mut self, b: u8, caps: bool) {
         // Check for double-vowel modifier (aa→â, ee→ê, oo→ô).
         if matches!(b, b'a' | b'e' | b'o') {
@@ -65,6 +68,7 @@ impl Composable for UltraFastViEngine {
         self.reapply_tone_after_nucleus_change();
     }
 
+    #[inline]
     fn push_raw_key(&mut self, b: u8, caps: bool) {
         if self.raw_len >= 24 {
             return;
@@ -74,6 +78,7 @@ impl Composable for UltraFastViEngine {
         self.process_key(b, caps);
     }
 
+    #[inline]
     fn render_out_buf(&mut self) {
         self.update_syl_structure();
 
@@ -101,6 +106,7 @@ impl Composable for UltraFastViEngine {
         }
     }
 
+    #[inline]
     fn render_passthrough(&mut self) {
         let n_buf = self.buf.len();
         let mut buf_idx = 0usize;

@@ -19,6 +19,7 @@ pub(crate) trait ModifierHandler {
 }
 
 impl ModifierHandler for UltraFastViEngine {
+    #[inline]
     fn handle_modifier(&mut self, b: u8, caps: bool) {
         match b {
             b'w' => self.handle_telex_w(caps),
@@ -33,6 +34,7 @@ impl ModifierHandler for UltraFastViEngine {
         }
     }
 
+    #[inline]
     fn handle_telex_w(&mut self, caps: bool) {
         let n = self.buf.len();
 
@@ -128,6 +130,7 @@ impl ModifierHandler for UltraFastViEngine {
         }
     }
 
+    #[inline]
     fn handle_telex_d(&mut self, caps: bool) {
         let n = self.buf.len();
 
@@ -167,6 +170,7 @@ impl ModifierHandler for UltraFastViEngine {
         self.buf.push(Syl::literal(b'd', caps));
     }
 
+    #[inline]
     fn handle_vni_6(&mut self, _caps: bool) {
         for i in (0..self.buf.len()).rev() {
             let syl = self.buf.get(i);
@@ -186,6 +190,7 @@ impl ModifierHandler for UltraFastViEngine {
         self.buf.push(Syl::literal(b'6', false));
     }
 
+    #[inline]
     fn handle_vni_7(&mut self, _caps: bool) {
         for i in (0..self.buf.len()).rev() {
             let syl = self.buf.get(i);
@@ -205,6 +210,7 @@ impl ModifierHandler for UltraFastViEngine {
         self.buf.push(Syl::literal(b'7', false));
     }
 
+    #[inline]
     fn handle_vni_8(&mut self, _caps: bool) {
         for i in (0..self.buf.len()).rev() {
             let syl = self.buf.get(i);
@@ -224,6 +230,7 @@ impl ModifierHandler for UltraFastViEngine {
         self.buf.push(Syl::literal(b'8', false));
     }
 
+    #[inline]
     fn handle_vni_9(&mut self, _caps: bool) {
         for i in (0..self.buf.len()).rev() {
             let syl = self.buf.get(i);
@@ -247,6 +254,7 @@ impl ModifierHandler for UltraFastViEngine {
         self.buf.push(Syl::literal(b'9', false));
     }
 
+    #[inline]
     fn find_modifier_target_for_double_vowel(&self, b: u8) -> Option<usize> {
         let n = self.buf.len();
         let mut crossed_consonant = false;

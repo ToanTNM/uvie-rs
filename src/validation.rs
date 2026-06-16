@@ -24,6 +24,7 @@ pub(crate) trait SyllableValidator {
 }
 
 impl SyllableValidator for UltraFastViEngine {
+    #[inline]
     fn is_valid_vietnamese(&self) -> bool {
         let n = self.buf.len();
         if n == 0 { return true; }
@@ -70,6 +71,7 @@ impl SyllableValidator for UltraFastViEngine {
         true
     }
 
+    #[inline]
     fn partition_syllable(&self) -> (usize, usize, usize, usize) {
         let n = self.buf.len();
 
@@ -119,6 +121,7 @@ impl SyllableValidator for UltraFastViEngine {
         (onset_end, nucleus_start, nucleus_end, coda_start)
     }
 
+    #[inline]
     fn mark_all_literal(&mut self) {
         for i in 0..self.buf.len() {
             let s = self.buf.get_mut(i);
@@ -129,6 +132,7 @@ impl SyllableValidator for UltraFastViEngine {
         }
     }
 
+    #[inline]
     fn is_vowel_entry(&self, s: &Syl) -> bool {
         let b = s.base;
         if self.mode.classify[b as usize] & IS_VOWEL != 0 { return true; }
@@ -136,16 +140,19 @@ impl SyllableValidator for UltraFastViEngine {
         false
     }
 
+    #[inline]
     fn onset_len(&self) -> usize {
         let (onset_end, _, _, _) = self.partition_syllable();
         onset_end
     }
 
+    #[inline]
     fn onset_raw_slice(&self) -> &[u8] {
         let onset_len = self.onset_len();
         &self.raw[..onset_len]
     }
 
+    #[inline]
     fn update_syl_structure(&mut self) {
         let (onset_end, _nuc_start, nucleus_end, _coda_start) = self.partition_syllable();
         let onset_kind = self.derive_onset_kind(onset_end);
@@ -164,6 +171,7 @@ impl SyllableValidator for UltraFastViEngine {
         };
     }
 
+    #[inline]
     fn derive_onset_kind(&self, onset_end: usize) -> OnsetKind {
         match onset_end {
             0 => OnsetKind::None,
@@ -174,6 +182,7 @@ impl SyllableValidator for UltraFastViEngine {
         }
     }
 
+    #[inline]
     fn is_u_glide(&self, idx: usize) -> bool {
         if idx == 0 { return false; }
         let prev = self.buf.get(idx - 1);
