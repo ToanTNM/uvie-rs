@@ -18,8 +18,8 @@ extension Notification.Name {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private let menuBar = MenuBarController()
-    private let smartSwitch = SmartSwitchManager()
-    private lazy var inputMethodManager = InputMethodManager(smartSwitch: smartSwitch)
+    private let memory = MemoryManager()
+    private lazy var inputMethodManager = InputMethodManager(memory: memory)
     private lazy var eventTap = EventTap(inputMethodManager: inputMethodManager)
     private weak var onboardingWindow: NSWindow?
 

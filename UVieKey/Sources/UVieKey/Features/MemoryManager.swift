@@ -3,7 +3,7 @@ import Cocoa
 
 /// Per-app language/input-method memory.
 /// Stores a map of bundleID → packed state (language | codeTable) in NSUserDefaults.
-final class SmartSwitchManager: ObservableObject {
+final class MemoryManager: ObservableObject {
     @Published var isEnabled: Bool {
         didSet { save() }
     }

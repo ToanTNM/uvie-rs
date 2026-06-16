@@ -6,7 +6,7 @@ final class InputMethodManager: ObservableObject {
     @Published var isVietnamese = true
     @Published var currentAppBundleID = ""
 
-    private var smartSwitch: SmartSwitchManager?
+    private var memory: MemoryManager?
     private var cancellables = Set<AnyCancellable>()
 
     var inputMethod: InputMethod {
@@ -19,8 +19,8 @@ final class InputMethodManager: ObservableObject {
         }
     }
 
-    init(smartSwitch: SmartSwitchManager? = nil) {
-        self.smartSwitch = smartSwitch
+    init(memory: MemoryManager? = nil) {
+        self.memory = memory
         setupAppSwitchObserver()
     }
 
@@ -57,7 +57,7 @@ final class InputMethodManager: ObservableObject {
         currentAppBundleID = bundleID
 
         // Restore state for new app
-        if let smartSwitch, let state = smartSwitch.state(for: bundleID) {
+        if let memory, let state = memory.state(for: bundleID) {
             isVietnamese = state.language
             // Code table could be applied here if needed
         }
@@ -65,6 +65,6 @@ final class InputMethodManager: ObservableObject {
 
     private func saveCurrentAppState() {
         guard !currentAppBundleID.isEmpty else { return }
-        smartSwitch?.setState(language: isVietnamese, for: currentAppBundleID)
+        memory?.setState(language: isVietnamese, for: currentAppBundleID)
     }
 }
