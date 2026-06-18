@@ -125,9 +125,9 @@ private struct SidebarRow: View {
 
 struct GeneralPane: View {
     @AppStorage(DefaultsKey.inputMethod)    private var inputMethod: String = "telex"
-    @AppStorage(DefaultsKey.checkSpelling)  private var checkSpelling: Bool = true
     @AppStorage(DefaultsKey.smartSwitchKey) private var smartSwitchKey: Bool = false
     @AppStorage(DefaultsKey.engineEnabled)  private var engineEnabled: Bool = true
+    @AppStorage(DefaultsKey.autoDisableOnNonLatinLayout) private var autoDisableOnNonLatinLayout: Bool = false
 
     private var isVietnameseMode: Binding<Bool> {
         Binding(
@@ -153,7 +153,7 @@ struct GeneralPane: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(isVietnameseMode.wrappedValue ? "Tiếng Việt" : "English")
                             .font(.system(size: 14, weight: .semibold))
-                        Text(isVietnameseMode.wrappedValue ? "Đang hoạt động — Gõ Tiếng Việt" : "Bàn phím ở chế độ English")
+                        Text(isVietnameseMode.wrappedValue ? "Gõ Tiếng Việt" : "English Keyboard")
                             .font(.system(size: 11))
                             .foregroundStyle(isVietnameseMode.wrappedValue ? Color.accentColor : .secondary)
                     }
@@ -188,15 +188,19 @@ struct GeneralPane: View {
 
             PaneSection("Thông minh") {
                 SettingsCard {
-                    SToggleRow("checkmark.circle",
-                                "Kiểm tra chính tả",
-                                "Phát hiện và gợi ý sửa lỗi Tiếng Việt",
-                                $checkSpelling)
-                    SCardDivider()
                     SToggleRow("arrow.triangle.2.circlepath",
                                 "Nhớ ngôn ngữ từng ứng dụng",
                                 "Tự động Tiếng Việt / English khi chuyển app",
                                 $smartSwitchKey)
+                }
+            }
+
+            PaneSection("Phát hiện ngôn ngữ") {
+                SettingsCard {
+                    SToggleRow("magnifyingglass",
+                                "Tự động tắt khi dùng layout khác",
+                                "Bỏ qua engine khi keyboard không phải Latin layout",
+                                $autoDisableOnNonLatinLayout)
                 }
             }
         }
@@ -639,27 +643,6 @@ struct AdvancedPane: View {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 14))
                             .foregroundStyle(.green)
-                    }
-                    .padding(14)
-                }
-            }
-
-            PaneSection("Phát hiện ngôn ngữ") {
-                SettingsCard {
-                    HStack(spacing: 14) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 24)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Tự động tắt khi dùng layout khác")
-                                .font(.system(size: 13, weight: .medium))
-                            Text("Bỏ qua engine khi keyboard không phải English layout")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        ComingSoonBadge()
                     }
                     .padding(14)
                 }

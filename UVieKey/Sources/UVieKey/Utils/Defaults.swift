@@ -16,4 +16,5 @@ enum DefaultsKey {
     static let clipboardAutoSplitEnabled = "ClipboardAutoSplitEnabled"
     static let clipboardSplitDelimiter = "ClipboardSplitDelimiter"
     static let clipboardSplitMinLength = "ClipboardSplitMinLength"
+    static let autoDisableOnNonLatinLayout = "AutoDisableOnNonLatinLayout"
 }

@@ -120,10 +120,11 @@ struct MenuBarPopoverView: View {
     @ObservedObject var controller: MenuBarController
     @StateObject private var clipboardManager = ClipboardManager.shared
     @AppStorage(DefaultsKey.inputMethod)        private var inputMethod: String = "telex"
-    @AppStorage(DefaultsKey.checkSpelling)      private var checkSpelling: Bool = true
     @AppStorage(DefaultsKey.smartSwitchKey)     private var smartSwitchKey: Bool = false
     @AppStorage(DefaultsKey.uppercaseFirstChar) private var uppercaseFirstChar: Bool = false
     @AppStorage(DefaultsKey.macroEnabled)       private var macroEnabled: Bool = false
+    @AppStorage(DefaultsKey.autoDisableOnNonLatinLayout) private var autoDisableOnNonLatinLayout: Bool = false
+    @StateObject private var layoutMonitor = KeyboardLayoutMonitor.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -246,11 +247,27 @@ struct MenuBarPopoverView: View {
     private var featureRows: some View {
         VStack(spacing: 0) {
             rowLabel("TÍNH NĂNG")
-            toggleRow("text.magnifyingglass",            "Kiểm tra chính tả",         $checkSpelling)
             toggleRow("brain","Nhớ ngôn ngữ từng app",      $smartSwitchKey)
             toggleRow("textformat",                  "Viết hoa đầu câu",           $uppercaseFirstChar)
             rowLabel("GÕ NHANH")
             toggleRow("doc.text",                    "Macro văn bản",              $macroEnabled)
+
+            // Show when non-Latin layout detected
+            if autoDisableOnNonLatinLayout && layoutMonitor.isNonLatinLayout {
+                rowLabel("PHÁT HIỆN LAYOUT")
+                HStack(spacing: 10) {
+                    Image(systemName: "globe")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.orange)
+                        .frame(width: 16)
+                    Text("Non-Latin layout - Engine tạm tắt")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
         }
     }
 

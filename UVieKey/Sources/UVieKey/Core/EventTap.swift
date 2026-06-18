@@ -77,6 +77,7 @@ final class EventTap: ObservableObject {
     private let appDetector = AppContextDetector()
     private let axInjector: AXTextInjector
     private let macroManager = MacroManager.shared
+    private let layoutMonitor = KeyboardLayoutMonitor.shared
 
     /// Tag synthetic events so we don't process our own output.
     private let syntheticTag: Int64 = 0x55564945 // "UVIE"
@@ -268,6 +269,13 @@ final class EventTap: ObservableObject {
 
         // In English mode, pass everything through
         guard inputMethodManager.isVietnamese else {
+            return Unmanaged.passRetained(event)
+        }
+
+        // Auto-disable on non-Latin keyboard layout
+        if UserDefaults.standard.bool(forKey: DefaultsKey.autoDisableOnNonLatinLayout),
+           layoutMonitor.isNonLatinLayout {
+            // Pass through when non-Latin layout is active (CJK, Cyrillic, etc.)
             return Unmanaged.passRetained(event)
         }
 
@@ -496,6 +504,12 @@ final class EventTap: ObservableObject {
     // MARK: - AX Mode (Accessibility text injection)
 
     private func handleAXEvent(type: CGEventType, keyCode: Int64, event: CGEvent) -> Unmanaged<CGEvent>? {
+        // Auto-disable on non-Latin keyboard layout for AX mode
+        if UserDefaults.standard.bool(forKey: DefaultsKey.autoDisableOnNonLatinLayout),
+           layoutMonitor.isNonLatinLayout {
+            return Unmanaged.passRetained(event)
+        }
+
         // Backspace
         if keyCode == 51 {
             if type == .keyUp {
