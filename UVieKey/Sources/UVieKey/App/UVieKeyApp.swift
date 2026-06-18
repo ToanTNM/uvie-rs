@@ -37,7 +37,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             DefaultsKey.macroEnabled:       false,
             DefaultsKey.modernOrthography:  true,
             DefaultsKey.inputMethod:        "telex",
+            DefaultsKey.clipboardHistoryEnabled: true,
+            DefaultsKey.clipboardMaxEntries: 10,
         ])
+
+        ClipboardManager.shared.startObserving()
 
         menuBar.setEventTap(eventTap)
 

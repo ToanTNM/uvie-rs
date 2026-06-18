@@ -30,21 +30,23 @@ final class SettingsWindow {
 // MARK: - Tabs
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general   = "Tổng quan"
-    case keyboard  = "Bàn phím"
-    case macro     = "Macro"
-    case advanced  = "Nâng cao"
-    case about     = "Giới thiệu"
+    case general    = "Tổng quan"
+    case keyboard   = "Bàn phím"
+    case macro      = "Macro"
+    case clipboard  = "Clipboard"
+    case advanced   = "Nâng cao"
+    case about      = "Giới thiệu"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .general:  return "slider.horizontal.3"
-        case .keyboard: return "keyboard"
-        case .macro:    return "doc.text.magnifyingglass"
-        case .advanced: return "gearshape.2"
-        case .about:    return "info.circle"
+        case .general:   return "slider.horizontal.3"
+        case .keyboard:  return "keyboard"
+        case .macro:     return "doc.text.magnifyingglass"
+        case .clipboard: return "doc.on.clipboard"
+        case .advanced:  return "gearshape.2"
+        case .about:     return "info.circle"
         }
     }
 }
@@ -72,11 +74,12 @@ struct SettingsView: View {
             // Detail pane
             Group {
                 switch tab {
-                case .general:  GeneralPane()
-                case .keyboard: KeyboardPane()
-                case .macro:    MacroPane()
-                case .advanced: AdvancedPane()
-                case .about:    AboutPane()
+                case .general:   GeneralPane()
+                case .keyboard:  KeyboardPane()
+                case .macro:     MacroPane()
+                case .clipboard: ClipboardPane()
+                case .advanced:  AdvancedPane()
+                case .about:     AboutPane()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -126,6 +129,13 @@ struct GeneralPane: View {
     @AppStorage(DefaultsKey.smartSwitchKey) private var smartSwitchKey: Bool = false
     @AppStorage(DefaultsKey.engineEnabled)  private var engineEnabled: Bool = true
 
+    private var isVietnameseMode: Binding<Bool> {
+        Binding(
+            get: { engineEnabled },
+            set: { engineEnabled = $0 }
+        )
+    }
+
     var body: some View {
         PaneScroll {
             // Engine master toggle
@@ -133,24 +143,24 @@ struct GeneralPane: View {
                 HStack(spacing: 14) {
                     ZStack {
                         Circle()
-                            .fill(engineEnabled ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.06))
+                            .fill(isVietnameseMode.wrappedValue ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.06))
                             .frame(width: 44, height: 44)
-                        Image(systemName: engineEnabled ? "keyboard.fill" : "keyboard")
+                        Image(systemName: isVietnameseMode.wrappedValue ? "keyboard.fill" : "keyboard")
                             .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(engineEnabled ? Color.accentColor : .secondary)
+                            .foregroundStyle(isVietnameseMode.wrappedValue ? Color.accentColor : .secondary)
                     }
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Gõ Tiếng Việt")
+                        Text(isVietnameseMode.wrappedValue ? "Tiếng Việt" : "English")
                             .font(.system(size: 14, weight: .semibold))
-                        Text(engineEnabled ? "Đang hoạt động" : "Đã tắt — bàn phím ở chế độ English")
+                        Text(isVietnameseMode.wrappedValue ? "Đang hoạt động — Gõ Tiếng Việt" : "Bàn phím ở chế độ English")
                             .font(.system(size: 11))
-                            .foregroundStyle(engineEnabled ? Color.accentColor : .secondary)
+                            .foregroundStyle(isVietnameseMode.wrappedValue ? Color.accentColor : .secondary)
                     }
 
                     Spacer()
 
-                    Toggle("", isOn: $engineEnabled)
+                    Toggle("", isOn: isVietnameseMode)
                         .toggleStyle(.switch)
                         .labelsHidden()
                         .scaleEffect(1.1)
@@ -158,7 +168,7 @@ struct GeneralPane: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
                 .contentShape(Rectangle())
-                .onTapGesture { engineEnabled.toggle() }
+                .onTapGesture { isVietnameseMode.wrappedValue.toggle() }
             }
             PaneSection("Bảng mã gõ") {
                 SettingsCard {
@@ -226,6 +236,150 @@ struct GeneralPane: View {
         .padding(.vertical, 11)
         .contentShape(Rectangle())
         .onTapGesture { inputMethod = tag }
+    }
+}
+
+// MARK: - Clipboard Pane
+
+struct ClipboardPane: View {
+    @AppStorage(DefaultsKey.clipboardHistoryEnabled) private var clipboardHistoryEnabled: Bool = true
+    @AppStorage(DefaultsKey.clipboardMaxEntries) private var clipboardMaxEntries: Int = 10
+    @StateObject private var clipboardManager = ClipboardManager.shared
+
+    var body: some View {
+        PaneScroll {
+            PaneSection("Cài đặt") {
+                SettingsCard {
+                    SToggleRow("doc.on.clipboard",
+                                "Ghi lại lịch sử bảng nhắn",
+                                "Lưu các nội dung đã sao chép để sử dụng lại nhanh chóng",
+                                $clipboardHistoryEnabled)
+                }
+
+                if clipboardHistoryEnabled {
+                    SettingsCard {
+                        HStack(spacing: 14) {
+                            Image(systemName: "number")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 24)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Số mục tối đa")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("Giới hạn số lượng nội dung được lưu (1–99)")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            HStack(spacing: 4) {
+                                Button {
+                                    if clipboardMaxEntries > 1 {
+                                        clipboardMaxEntries -= 1
+                                    }
+                                } label: {
+                                    Image(systemName: "minus")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .frame(width: 22, height: 22)
+                                }
+                                .buttonStyle(.plain)
+                                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                                .disabled(clipboardMaxEntries <= 1)
+
+                                Text("\(clipboardMaxEntries)")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .monospacedDigit()
+                                    .frame(width: 28)
+
+                                Button {
+                                    if clipboardMaxEntries < 99 {
+                                        clipboardMaxEntries += 1
+                                    }
+                                } label: {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .frame(width: 22, height: 22)
+                                }
+                                .buttonStyle(.plain)
+                                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                                .disabled(clipboardMaxEntries >= 99)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 11)
+                    }
+                }
+            }
+
+            if clipboardHistoryEnabled {
+                PaneSection("Lịch sử") {
+                    SettingsCard {
+                        HStack {
+                            Text("Nội dung")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("\(clipboardManager.history.count) / \(clipboardMaxEntries) mục")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.primary.opacity(0.04))
+
+                        if clipboardManager.history.isEmpty {
+                            Text("Chưa có nội dung nào")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.tertiary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.vertical, 20)
+                        } else {
+                            ScrollView {
+                                VStack(spacing: 0) {
+                                    ForEach(Array(clipboardManager.history.enumerated()), id: \.offset) { idx, item in
+                                        SCardDivider()
+                                        HStack(spacing: 10) {
+                                            Text(clipText(item))
+                                                .font(.system(size: 12))
+                                                .lineLimit(1)
+                                            Spacer()
+                                            Button {
+                                                clipboardManager.remove(at: idx)
+                                            } label: {
+                                                Image(systemName: "trash")
+                                                    .font(.system(size: 11))
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 9)
+                                    }
+                                }
+                            }
+                            .frame(maxHeight: 240)
+                        }
+                    }
+
+                    HStack {
+                        Spacer()
+                        Button {
+                            clipboardManager.clearHistory()
+                        } label: {
+                            Label("Xóa tất cả", systemImage: "trash")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.red)
+                        .disabled(clipboardManager.history.isEmpty)
+                    }
+                }
+            }
+        }
+    }
+
+    private func clipText(_ text: String) -> String {
+        if text.count <= 60 { return text }
+        return String(text.prefix(60)) + "…"
     }
 }
 

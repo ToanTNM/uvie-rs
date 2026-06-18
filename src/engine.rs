@@ -14,6 +14,8 @@ pub struct UltraFastViEngine {
     pub(crate) buf: SylBuf,
     /// Raw keystroke snapshot. `raw[i]` == lowercased byte of the i-th key.
     pub(crate) raw: [u8; 24],
+    /// Uppercase flag for each raw keystroke.
+    pub(crate) raw_caps: [bool; 24],
     pub(crate) raw_len: usize,
     /// Rendered output of the current composing word.
     pub(crate) out_buf: OutBuffer,
@@ -40,6 +42,7 @@ impl UltraFastViEngine {
         Self {
             buf: SylBuf::new(),
             raw: [0u8; 24],
+            raw_caps: [false; 24],
             raw_len: 0,
             out_buf: new_out_buffer(),
             committed: new_out_buffer(),
@@ -145,9 +148,11 @@ impl UltraFastViEngine {
             self.raw_len = 0;
             for i in 0..target_len {
                 let b = self.raw[i];
+                let caps = self.raw_caps[i];
                 self.raw[self.raw_len] = b;
+                self.raw_caps[self.raw_len] = caps;
                 self.raw_len += 1;
-                self.process_key(b, false);
+                self.process_key(b, caps);
             }
             self.render_out_buf();
             return &self.out_buf;

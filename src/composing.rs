@@ -74,6 +74,7 @@ impl Composable for UltraFastViEngine {
             return;
         }
         self.raw[self.raw_len] = b;
+        self.raw_caps[self.raw_len] = caps;
         self.raw_len += 1;
         self.process_key(b, caps);
     }
@@ -126,7 +127,12 @@ impl Composable for UltraFastViEngine {
                 raw_idx += 2;
                 buf_idx += 1;
             } else {
-                let _ = self.out_buf.push(b as char);
+                let c = if self.raw_caps[raw_idx] {
+                    (b as char).to_ascii_uppercase()
+                } else {
+                    b as char
+                };
+                let _ = self.out_buf.push(c);
                 raw_idx += 1;
                 buf_idx += 1;
             }

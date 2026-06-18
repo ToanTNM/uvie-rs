@@ -12,4 +12,6 @@ enum DefaultsKey {
     static let inputMethodHotkey = "InputMethodHotkey"
     static let onboardingCompleted = "OnboardingCompleted"
     static let engineEnabled = "EngineEnabled"
+    static let clipboardHistoryEnabled = "ClipboardHistoryEnabled"
+    static let clipboardMaxEntries = "ClipboardMaxEntries"
 }

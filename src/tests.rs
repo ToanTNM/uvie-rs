@@ -1570,3 +1570,42 @@ fn mixed_case_horn_first_upper() {
     // First char uppercase, second lowercase: Ow → Ơ
     assert_eq!(type_seq(&mut e, "Ow"), "Ơ");
 }
+
+#[test]
+fn uppercase_preserved_in_passthrough() {
+    let mut e = UltraFastViEngine::new();
+    // "Al" is not valid Vietnamese; must stay "Al", not "al".
+    assert_eq!(type_seq(&mut e, "Al"), "Al");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "AB"), "AB");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "Abc"), "Abc");
+}
+
+#[test]
+fn mixed_case_passthrough() {
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "aL"), "aL");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ClEAR"), "ClEAR");
+}
+
+#[test]
+fn uppercase_backspace_preserves_case() {
+    let mut e = UltraFastViEngine::new();
+    e.feed('A');
+    e.feed('l');
+    assert_eq!(e.current_composing(), "Al");
+    e.backspace();
+    assert_eq!(e.current_composing(), "A");
+
+    let mut e = UltraFastViEngine::new();
+    e.feed('A');
+    e.feed('l');
+    e.feed('e');
+    e.backspace();
+    assert_eq!(e.current_composing(), "Al");
+}
