@@ -1,3 +1,11 @@
 target
 .idea
 .DS_Store
+.build
+.swiftpm
+xcuserdata/
+
+UVieKeyMac/
+*/PLAN.md
+PLAN.md
+*/FEATURES.md

@@ -2,24 +2,34 @@ use std::ffi::{c_char, c_int};
 use std::ptr;
 use std::sync::{Mutex, MutexGuard};
 
+use crate::diff::Diffable;
 use crate::engine::UltraFastViEngine;
 use crate::modes::InputMethod;
 
+// ===================================================================
+// Single opaque engine type — diff-based API
+// ===================================================================
+
 /// Opaque handle to the engine. C code only ever holds a pointer to this type;
 /// the fields are intentionally not part of the C ABI.
+///
+/// All `feed`/`backspace`/`commit` functions use the diff API: they return
+/// a backspace count and write the new suffix into a caller-provided buffer.
 pub struct UvieEngine {
     inner: Mutex<UltraFastViEngine>,
-    pending_utf8: Mutex<Vec<u8>>,
 }
 
 impl UvieEngine {
     fn new() -> Self {
         Self {
             inner: Mutex::new(UltraFastViEngine::new()),
-            pending_utf8: Mutex::new(Vec::with_capacity(4)),
         }
     }
 }
+
+// ===================================================================
+// Internal helpers
+// ===================================================================
 
 fn lock_engine<'a>(engine: *mut UvieEngine) -> Option<MutexGuard<'a, UltraFastViEngine>> {
     if engine.is_null() {
@@ -35,20 +45,6 @@ fn lock_engine_const<'a>(engine: *const UvieEngine) -> Option<MutexGuard<'a, Ult
     }
     let engine_ref = unsafe { &*engine };
     engine_ref.inner.lock().ok()
-}
-
-fn lock_pending<'a>(engine: *mut UvieEngine) -> Option<MutexGuard<'a, Vec<u8>>> {
-    if engine.is_null() {
-        return None;
-    }
-    let engine_ref = unsafe { &*engine };
-    engine_ref.pending_utf8.lock().ok()
-}
-
-fn clear_pending(engine: *mut UvieEngine) {
-    if let Some(mut pending) = lock_pending(engine) {
-        pending.clear();
-    }
 }
 
 fn utf8_prefix_len(bytes: &[u8], max_len: usize) -> usize {
@@ -88,41 +84,9 @@ fn write_output(out: &str, out_buf: *mut c_char, out_len: usize) -> usize {
     write_len
 }
 
-fn decode_utf8_char(engine: *mut UvieEngine, byte: u8) -> Option<char> {
-    if byte < 0x80 {
-        if let Some(mut pending) = lock_pending(engine) {
-            pending.clear();
-        }
-        return Some(byte as char);
-    }
-
-    let mut pending = lock_pending(engine)?;
-    pending.push(byte);
-    if pending.len() > 4 {
-        pending.clear();
-        return None;
-    }
-
-    match std::str::from_utf8(&pending) {
-        Ok(s) => {
-            let mut it = s.chars();
-            let ch = it.next();
-            if ch.is_some() && it.next().is_none() {
-                pending.clear();
-                ch
-            } else {
-                pending.clear();
-                None
-            }
-        }
-        Err(err) => {
-            if err.error_len().is_some() {
-                pending.clear();
-            }
-            None
-        }
-    }
-}
+// ===================================================================
+// Lifecycle
+// ===================================================================
 
 #[unsafe(no_mangle)]
 pub extern "C" fn uvie_engine_new() -> *mut UvieEngine {
@@ -136,26 +100,19 @@ pub extern "C" fn uvie_engine_free(engine: *mut UvieEngine) {
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_engine_clear(engine: *mut UvieEngine) {
-    let _ = std::panic::catch_unwind(|| {
-        clear_pending(engine);
-        if let Some(mut e) = lock_engine(engine) {
-            e.clear();
-        }
-    });
-}
+// ===================================================================
+// Configuration
+// ===================================================================
 
 #[unsafe(no_mangle)]
 pub extern "C" fn uvie_engine_set_input_method(engine: *mut UvieEngine, method: c_int) {
     let _ = std::panic::catch_unwind(|| {
-        clear_pending(engine);
         if let Some(mut e) = lock_engine(engine) {
-        let m = match method {
-            0 => InputMethod::Telex,
-            1 => InputMethod::Vni,
-            _ => return,
-        };
+            let m = match method {
+                0 => InputMethod::Telex,
+                1 => InputMethod::Vni,
+                _ => return,
+            };
             e.set_input_method(m);
         }
     });
@@ -168,61 +125,51 @@ pub extern "C" fn uvie_engine_get_input_method(engine: *const UvieEngine) -> c_i
             return -1;
         };
         match e.input_method() {
-            InputMethod::Vni => 1,
             InputMethod::Telex => 0,
+            InputMethod::Vni => 1,
         }
     })
     .unwrap_or(-1)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn uvie_engine_backspace(
+pub extern "C" fn uvie_engine_set_quick_start(engine: *mut UvieEngine, enabled: c_int) {
+    let _ = std::panic::catch_unwind(|| {
+        if let Some(mut e) = lock_engine(engine) {
+            e.set_quick_start(enabled != 0);
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_set_quick_telex(engine: *mut UvieEngine, enabled: c_int) {
+    let _ = std::panic::catch_unwind(|| {
+        if let Some(mut e) = lock_engine(engine) {
+            e.set_quick_telex(enabled != 0);
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_set_modern_orthography(engine: *mut UvieEngine, enabled: c_int) {
+    let _ = std::panic::catch_unwind(|| {
+        if let Some(mut e) = lock_engine(engine) {
+            e.set_modern_orthography(enabled != 0);
+        }
+    });
+}
+
+// ===================================================================
+// Diff-based keystroke API
+// ===================================================================
+
+/// Feed a single ASCII character.
+/// Returns the number of backspaces the caller must send,
+/// and writes the new output suffix into `out_buf`.
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_feed(
     engine: *mut UvieEngine,
-    out_buf: *mut c_char,
-    out_len: usize,
-) -> usize {
-    std::panic::catch_unwind(|| {
-        clear_pending(engine);
-        let Some(mut e) = lock_engine(engine) else {
-            return 0;
-        };
-        let result = e.backspace().to_string();
-        write_output(&result, out_buf, out_len)
-    })
-    .unwrap_or(0)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_engine_is_empty(engine: *const UvieEngine) -> c_int {
-    std::panic::catch_unwind(|| {
-        let Some(e) = lock_engine_const(engine) else {
-            return 1;
-        };
-        if e.is_empty() { 1 } else { 0 }
-    })
-    .unwrap_or(1)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_engine_current_output(
-    engine: *const UvieEngine,
-    out_buf: *mut c_char,
-    out_len: usize,
-) -> usize {
-    std::panic::catch_unwind(|| {
-        let Some(e) = lock_engine_const(engine) else {
-            return 0;
-        };
-        let result = e.current_output().to_string();
-        write_output(&result, out_buf, out_len)
-    })
-    .unwrap_or(0)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn uvie_engine_feed_utf8(
-    engine: *mut UvieEngine,
-    ch: u8,
+    ch: c_char,
     out_buf: *mut c_char,
     out_len: usize,
 ) -> usize {
@@ -230,21 +177,123 @@ pub extern "C" fn uvie_engine_feed_utf8(
         if engine.is_null() || out_buf.is_null() || out_len == 0 {
             return 0;
         }
-
-        let decoded = decode_utf8_char(engine, ch);
-
+        let c = ch as u8 as char;
         let Some(mut e) = lock_engine(engine) else {
             return 0;
         };
+        let (backspaces, suffix) = e.feed_diff(c);
+        write_output(suffix, out_buf, out_len);
+        backspaces
+    })
+    .unwrap_or(0)
+}
 
-        let result = if let Some(c) = decoded {
-            e.feed(c)
-        } else {
-            e.current_output()
+/// Handle backspace.
+/// Returns backspace count, writes new output suffix into `out_buf`.
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_backspace(
+    engine: *mut UvieEngine,
+    out_buf: *mut c_char,
+    out_len: usize,
+) -> usize {
+    std::panic::catch_unwind(|| {
+        if engine.is_null() || out_buf.is_null() || out_len == 0 {
+            return 0;
         }
-        .to_string();
+        let Some(mut e) = lock_engine(engine) else {
+            return 0;
+        };
+        let (backspaces, suffix) = e.backspace_diff();
+        write_output(suffix, out_buf, out_len);
+        backspaces
+    })
+    .unwrap_or(0)
+}
 
-        write_output(&result, out_buf, out_len)
+/// Commit the current word (call on space / punctuation / break key).
+/// Returns backspace count (usually 0), writes output into `out_buf`.
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_commit(
+    engine: *mut UvieEngine,
+    out_buf: *mut c_char,
+    out_len: usize,
+) -> usize {
+    std::panic::catch_unwind(|| {
+        if engine.is_null() || out_buf.is_null() || out_len == 0 {
+            return 0;
+        }
+        let Some(mut e) = lock_engine(engine) else {
+            return 0;
+        };
+        let (backspaces, suffix) = e.commit_diff();
+        write_output(suffix, out_buf, out_len);
+        backspaces
+    })
+    .unwrap_or(0)
+}
+
+/// Reset all engine state (composing + committed + diff tracking).
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_reset(engine: *mut UvieEngine) {
+    let _ = std::panic::catch_unwind(|| {
+        if let Some(mut e) = lock_engine(engine) {
+            e.reset_diff();
+        }
+    });
+}
+
+// ===================================================================
+// Introspection
+// ===================================================================
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_is_composing(engine: *const UvieEngine) -> c_int {
+    std::panic::catch_unwind(|| {
+        let Some(e) = lock_engine_const(engine) else {
+            return 0;
+        };
+        if e.is_composing_diff() { 1 } else { 0 }
+    })
+    .unwrap_or(0)
+}
+
+/// Get the accumulated committed text (auto-committed syllables from V-C-V).
+/// Returns byte count of written string (excluding null terminator).
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_committed_text(
+    engine: *const UvieEngine,
+    out_buf: *mut c_char,
+    out_len: usize,
+) -> usize {
+    std::panic::catch_unwind(|| {
+        if engine.is_null() || out_buf.is_null() || out_len == 0 {
+            return 0;
+        }
+        let Some(e) = lock_engine_const(engine) else {
+            return 0;
+        };
+        write_output(e.committed_text_diff(), out_buf, out_len)
+    })
+    .unwrap_or(0)
+}
+
+/// Get the current full output (committed + composing).
+/// Returns byte count of written string (excluding null terminator).
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_current_output(
+    engine: *const UvieEngine,
+    out_buf: *mut c_char,
+    out_len: usize,
+) -> usize {
+    std::panic::catch_unwind(|| {
+        if engine.is_null() || out_buf.is_null() || out_len == 0 {
+            return 0;
+        }
+        let Some(e) = lock_engine_const(engine) else {
+            return 0;
+        };
+        let text = e.current_output();
+        write_output(&text, out_buf, out_len)
     })
     .unwrap_or(0)
 }

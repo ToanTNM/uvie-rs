@@ -9,6 +9,9 @@
 /**
  * Opaque handle to the engine. C code only ever holds a pointer to this type;
  * the fields are intentionally not part of the C ABI.
+ *
+ * All `feed`/`backspace`/`commit` functions use the diff API: they return
+ * a backspace count and write the new suffix into a caller-provided buffer.
  */
 typedef struct UvieEngine UvieEngine;
 
@@ -20,19 +23,53 @@ UvieEngine *uvie_engine_new(void);
 
 void uvie_engine_free(UvieEngine *engine);
 
-void uvie_engine_clear(UvieEngine *engine);
-
 void uvie_engine_set_input_method(UvieEngine *engine, int method);
 
 int uvie_engine_get_input_method(const UvieEngine *engine);
 
+void uvie_engine_set_quick_start(UvieEngine *engine, int enabled);
+
+void uvie_engine_set_quick_telex(UvieEngine *engine, int enabled);
+
+void uvie_engine_set_modern_orthography(UvieEngine *engine, int enabled);
+
+/**
+ * Feed a single ASCII character.
+ * Returns the number of backspaces the caller must send,
+ * and writes the new output suffix into `out_buf`.
+ */
+size_t uvie_engine_feed(UvieEngine *engine, char ch, char *out_buf, size_t out_len);
+
+/**
+ * Handle backspace.
+ * Returns backspace count, writes new output suffix into `out_buf`.
+ */
 size_t uvie_engine_backspace(UvieEngine *engine, char *out_buf, size_t out_len);
 
-int uvie_engine_is_empty(const UvieEngine *engine);
+/**
+ * Commit the current word (call on space / punctuation / break key).
+ * Returns backspace count (usually 0), writes output into `out_buf`.
+ */
+size_t uvie_engine_commit(UvieEngine *engine, char *out_buf, size_t out_len);
 
+/**
+ * Reset all engine state (composing + committed + diff tracking).
+ */
+void uvie_engine_reset(UvieEngine *engine);
+
+int uvie_engine_is_composing(const UvieEngine *engine);
+
+/**
+ * Get the accumulated committed text (auto-committed syllables from V-C-V).
+ * Returns byte count of written string (excluding null terminator).
+ */
+size_t uvie_engine_committed_text(const UvieEngine *engine, char *out_buf, size_t out_len);
+
+/**
+ * Get the current full output (committed + composing).
+ * Returns byte count of written string (excluding null terminator).
+ */
 size_t uvie_engine_current_output(const UvieEngine *engine, char *out_buf, size_t out_len);
-
-size_t uvie_engine_feed_utf8(UvieEngine *engine, uint8_t ch, char *out_buf, size_t out_len);
 
 #ifdef __cplusplus
 }  // extern "C"
