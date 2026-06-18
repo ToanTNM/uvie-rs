@@ -8,6 +8,7 @@ import ApplicationServices
 /// (input method, quick modes, modern orthography) is always consistent.
 final class AXTextInjector {
     private let engine: EngineBridge
+    private let macroManager = MacroManager.shared
 
     /// Cached focused element to avoid repeated lookups.
     private weak var cachedElement: AXUIElement?
@@ -61,6 +62,25 @@ final class AXTextInjector {
 
     /// Commit on word boundary.
     func commit() {
+        // Check for macro expansion first
+        if macroManager.isEnabled() {
+            let currentText = engine.currentOutput()
+            if let expansion = macroManager.findExpansion(for: currentText) {
+                guard let element = getFocusedTextElement() else { return }
+                guard let current = getTextValue(element) else { return }
+                
+                // Backspace the abbreviation
+                let abbreviationLength = currentText.count
+                var newText = current
+                for _ in 0..<abbreviationLength { newText = String(newText.dropLast()) }
+                newText += expansion
+                
+                setTextValue(element, text: newText)
+                setCursorToEnd(element, length: newText.count)
+                engine.reset()
+                return
+            }
+        }
         _ = engine.commit()
     }
 

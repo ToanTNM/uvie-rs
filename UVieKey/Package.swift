@@ -15,6 +15,8 @@ let package = Package(
                 .linkedFramework("Cocoa"),
                 .linkedFramework("Carbon"),
                 .linkedFramework("ApplicationServices"),
+                .unsafeFlags(["-L../target/release"], .when(platforms: [.macOS])),
+                .unsafeFlags(["-luvie"], .when(platforms: [.macOS])),
             ]
         )
     ]

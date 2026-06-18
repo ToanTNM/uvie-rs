@@ -1271,7 +1271,7 @@ fn debug_when_phast_passthrough() {
     type_seq(&mut e, "phat"); // "phat" passthrough? Or valid? 
     println!("phat alone: {:?}", e.current_composing());
     // Now backspace 4 times
-    for i in 0..4 { e.backspace(); }
+    for _i in 0..4 { e.backspace(); }
     println!("phat+4BS: {:?}", e.current_composing());
     // Now type phast
     let out = type_seq(&mut e, "phast");

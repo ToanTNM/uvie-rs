@@ -65,6 +65,8 @@ pub trait Diffable {
     fn is_composing_diff(&self) -> bool;
     fn current_composing_diff(&self) -> &str;
     fn committed_text_diff(&self) -> &str;
+    fn prev_inner_render_debug(&self) -> &str;
+    fn prev_rendered_debug(&self) -> &str;
 }
 
 impl Diffable for UltraFastViEngine {
@@ -116,6 +118,8 @@ impl Diffable for UltraFastViEngine {
             if last_idx >= 1 {
                 self.diff.raw_chars.swap(last_idx - 1, last_idx);
                 self.diff.raw_chars.truncate(last_idx);
+                // Update engine's raw_len to match the modified diff.raw_chars
+                self.raw_len = self.diff.raw_chars.len();
             }
             self.diff.last_valid_raw_len = 0;
             self.diff.last_valid_out.clear();
@@ -148,7 +152,9 @@ impl Diffable for UltraFastViEngine {
         // Diff baseline.
         let prev_was_optimistic = self.diff.prev_rendered != self.diff.prev_inner_render;
         let diff_baseline = if !is_optimistic && prev_was_optimistic {
-            self.diff.prev_inner_render.clone()
+            // When optimistic display is cancelled, diff from the optimistic display
+            // (prev_rendered) to the new output, since that's what the user sees.
+            self.diff.prev_rendered.clone()
         } else {
             self.diff.prev_rendered.clone()
         };
@@ -211,12 +217,19 @@ impl Diffable for UltraFastViEngine {
 
     fn backspace_diff(&mut self) -> (usize, &str) {
         if self.diff.raw_chars.is_empty() {
+            if !self.diff.diff_committed.is_empty() {
+                self.diff.diff_committed.pop();
+                self.diff.diff_suffix.clear();
+                return (1, &self.diff.diff_suffix);
+            }
             self.diff.diff_suffix.clear();
             return (0, &self.diff.diff_suffix);
         }
         self.diff.raw_chars.pop();
         let prev = self.diff.prev_rendered.clone();
         self.backspace();
+        // Sync raw_len with diff.raw_chars after backspace
+        self.raw_len = self.diff.raw_chars.len();
         let new_composed = self.out_buf.clone();
         self.diff.prev_inner_render.clear();
         let _ = self.diff.prev_inner_render.push_str(&new_composed);
@@ -229,6 +242,7 @@ impl Diffable for UltraFastViEngine {
             self.diff.last_valid_out.clear();
             let (bs, _) = Self::diff_into(&prev, &new_composed, &mut self.diff.diff_suffix);
             self.diff.prev_rendered.clear();
+            self.diff.prev_inner_render.clear();
             return (bs, &self.diff.diff_suffix);
         }
 
@@ -277,6 +291,14 @@ impl Diffable for UltraFastViEngine {
 
     fn committed_text_diff(&self) -> &str {
         &self.diff.diff_committed
+    }
+
+    fn prev_inner_render_debug(&self) -> &str {
+        &self.diff.prev_inner_render
+    }
+
+    fn prev_rendered_debug(&self) -> &str {
+        &self.diff.prev_rendered
     }
 }
 

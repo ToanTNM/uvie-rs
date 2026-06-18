@@ -123,8 +123,6 @@ struct MenuBarPopoverView: View {
     @AppStorage(DefaultsKey.checkSpelling)      private var checkSpelling: Bool = true
     @AppStorage(DefaultsKey.smartSwitchKey)     private var smartSwitchKey: Bool = false
     @AppStorage(DefaultsKey.uppercaseFirstChar) private var uppercaseFirstChar: Bool = false
-    @AppStorage(DefaultsKey.quickStart)         private var quickStart: Bool = false
-    @AppStorage(DefaultsKey.quickTelex)         private var quickTelex: Bool = false
     @AppStorage(DefaultsKey.macroEnabled)       private var macroEnabled: Bool = false
 
     var body: some View {
@@ -252,8 +250,6 @@ struct MenuBarPopoverView: View {
             toggleRow("brain","Nhớ ngôn ngữ từng app",      $smartSwitchKey)
             toggleRow("textformat",                  "Viết hoa đầu câu",           $uppercaseFirstChar)
             rowLabel("GÕ NHANH")
-            toggleRow("bolt",                        "Gõ tắt phụ âm (j→gi…)",     $quickStart)
-            toggleRow("keyboard",                    "Gõ tắt Telex (cc→ch…)",     $quickTelex)
             toggleRow("doc.text",                    "Macro văn bản",              $macroEnabled)
         }
     }

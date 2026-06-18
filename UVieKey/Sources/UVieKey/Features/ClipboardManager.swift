@@ -56,9 +56,36 @@ final class ClipboardManager: ObservableObject {
         guard pasteboard.changeCount != lastChangeCount else { return }
         lastChangeCount = pasteboard.changeCount
 
+        // Something new was copied externally — clear the "copied" indicator
+        if !isCopyingFromHistory {
+            recentlyCopiedString = nil
+        }
+
         guard !isCopyingFromHistory,
               let string = pasteboard.string(forType: .string),
               !string.isEmpty else { return }
+
+        let autoSplit = UserDefaults.standard.bool(forKey: DefaultsKey.clipboardAutoSplitEnabled)
+
+        if autoSplit {
+            let delimiter = UserDefaults.standard.string(forKey: DefaultsKey.clipboardSplitDelimiter) ?? "newline"
+            let minLength = UserDefaults.standard.integer(forKey: DefaultsKey.clipboardSplitMinLength)
+            let effectiveMinLength = minLength > 0 ? minLength : 3
+
+            let segments = split(string, by: delimiter)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { $0.count >= effectiveMinLength }
+
+            if segments.count > 1 {
+                for segment in segments.reversed() {
+                    history.removeAll { $0 == segment }
+                    history.insert(segment, at: 0)
+                }
+                enforceLimit()
+                saveHistory()
+                return
+            }
+        }
 
         if history.first == string { return }
 
@@ -66,6 +93,19 @@ final class ClipboardManager: ObservableObject {
         history.insert(string, at: 0)
         enforceLimit()
         saveHistory()
+    }
+
+    private func split(_ string: String, by delimiter: String) -> [String] {
+        switch delimiter {
+        case "newline":
+            return string.components(separatedBy: .newlines)
+        case "comma":
+            return string.components(separatedBy: ",")
+        case "semicolon":
+            return string.components(separatedBy: ";")
+        default:
+            return string.components(separatedBy: delimiter)
+        }
     }
 
     private func enforceLimit() {
@@ -83,11 +123,9 @@ final class ClipboardManager: ObservableObject {
 
         recentlyCopiedString = string
         clearCopiedTimer?.invalidate()
-        clearCopiedTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
+        clearCopiedTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
             Task { @MainActor in
-                if self?.recentlyCopiedString == string {
-                    self?.recentlyCopiedString = nil
-                }
+                self?.recentlyCopiedString = nil
             }
         }
 

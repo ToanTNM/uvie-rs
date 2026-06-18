@@ -1,7 +1,7 @@
 //! Integration tests for UltraFastViEngine::feed_diff — diff-based API.
 
 use uvie::diff::Diffable;
-use uvie::{InputMethod, UltraFastViEngine};
+use uvie::UltraFastViEngine;
 
 fn apply_diff(screen: &mut String, bs: usize, suffix: &str) {
     let sc: Vec<char> = screen.chars().collect();
@@ -11,17 +11,6 @@ fn apply_diff(screen: &mut String, bs: usize, suffix: &str) {
 
 fn assert_diff(input: &str, expected: &str) {
     let mut engine = UltraFastViEngine::new();
-    let mut screen = String::new();
-    for ch in input.chars() {
-        let (bs, suffix) = engine.feed_diff(ch);
-        apply_diff(&mut screen, bs, suffix);
-    }
-    assert_eq!(screen, expected, "input: {:?}", input);
-}
-
-fn assert_diff_vni(input: &str, expected: &str) {
-    let mut engine = UltraFastViEngine::new();
-    engine.set_input_method(InputMethod::Vni);
     let mut screen = String::new();
     for ch in input.chars() {
         let (bs, suffix) = engine.feed_diff(ch);

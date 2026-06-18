@@ -276,3 +276,24 @@ pub extern "C" fn uvie_engine_committed_text(
     })
     .unwrap_or(0)
 }
+
+/// Get the current full output (committed + composing).
+/// Returns byte count of written string (excluding null terminator).
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_current_output(
+    engine: *const UvieEngine,
+    out_buf: *mut c_char,
+    out_len: usize,
+) -> usize {
+    std::panic::catch_unwind(|| {
+        if engine.is_null() || out_buf.is_null() || out_len == 0 {
+            return 0;
+        }
+        let Some(e) = lock_engine_const(engine) else {
+            return 0;
+        };
+        let text = e.current_output();
+        write_output(&text, out_buf, out_len)
+    })
+    .unwrap_or(0)
+}

@@ -76,12 +76,19 @@ final class EventTap: ObservableObject {
     let inputMethodManager: InputMethodManager
     private let appDetector = AppContextDetector()
     private let axInjector: AXTextInjector
+    private let macroManager = MacroManager.shared
 
     /// Tag synthetic events so we don't process our own output.
     private let syntheticTag: Int64 = 0x55564945 // "UVIE"
 
     /// Observer token for UserDefaults runtime changes.
     private var defaultsObserver: NSObjectProtocol?
+
+    /// Fn-key hotkey state (event-tap callback thread only).
+    private var fnIsDown = false
+    private var fnWasTap = false
+    private var fnHandledByKeyEvent = false
+    private var lastToggleTime: Date?
 
     init(inputMethodManager: InputMethodManager) {
         self.inputMethodManager = inputMethodManager
@@ -155,6 +162,12 @@ final class EventTap: ObservableObject {
         appDetector.stop()
     }
 
+    // MARK: - Helpers
+    
+    private func getCurrentText() -> String {
+        return _engine.currentOutput()
+    }
+    
     // MARK: - Settings
 
     /// Read all engine-relevant settings from UserDefaults and push to the
@@ -163,8 +176,6 @@ final class EventTap: ObservableObject {
         let defaults = UserDefaults.standard
         let method = defaults.string(forKey: DefaultsKey.inputMethod) ?? "telex"
         _engine.setInputMethod(method == "vni" ? .vni : .telex)
-        _engine.setQuickStart(defaults.bool(forKey: DefaultsKey.quickStart))
-        _engine.setQuickTelex(defaults.bool(forKey: DefaultsKey.quickTelex))
         _engine.setModernOrthography(defaults.bool(forKey: DefaultsKey.modernOrthography))
     }
 
@@ -215,6 +226,11 @@ final class EventTap: ObservableObject {
         // Bypass system UI apps
         if shouldBypass {
             return Unmanaged.passRetained(event)
+        }
+
+        // Global hotkey: Fn tap toggles Vietnamese / English
+        if handleHotkey(type: type, event: event) {
+            return nil
         }
 
         // Pass through flags changes
@@ -289,6 +305,44 @@ final class EventTap: ObservableObject {
                 return Unmanaged.passRetained(event)
             }
             if type == .keyDown {
+                // Check for macro expansion first
+                if macroManager.isEnabled() {
+                    // Get the current text (committed + composing)
+                    let currentText = getCurrentText()
+                    if let expansion = macroManager.findExpansion(for: currentText) {
+                        // Backspace the abbreviation
+                        let abbreviationLength = currentText.count
+                        
+                        // Use the engine's commit to properly backspace first
+                        let (bs, _) = _engine.commit()
+                        
+                        if bs > 0 {
+                            if isCompoundApp {
+                                sendEmptyCharacter()
+                                let adjustedBs = bs + 1
+                                if isChromium {
+                                    applySelectionBackspaces(adjustedBs)
+                                } else {
+                                    applyBackspaces(adjustedBs)
+                                }
+                            } else {
+                                applyBackspaces(bs)
+                            }
+                        }
+                        
+                        // Additional backspace if engine didn't catch all
+                        if abbreviationLength > bs {
+                            let remaining = abbreviationLength - bs
+                            applyBackspaces(remaining)
+                        }
+                        
+                        // Insert the expansion
+                        postText(expansion)
+                        _engine.reset()
+                        return nil  // Consume the space event
+                    }
+                }
+                
                 let (bs, out) = _engine.commit()
                 if bs > 0 {
                     if isCompoundApp {
@@ -314,6 +368,43 @@ final class EventTap: ObservableObject {
                 return Unmanaged.passRetained(event)
             }
             if type == .keyDown {
+                // Check for macro expansion first
+                if macroManager.isEnabled() {
+                    let currentText = getCurrentText()
+                    if let expansion = macroManager.findExpansion(for: currentText) {
+                        // Backspace the abbreviation
+                        let abbreviationLength = currentText.count
+                        
+                        // Use the engine's commit to properly backspace first
+                        let (bs, _) = _engine.commit()
+                        
+                        if bs > 0 {
+                            if isCompoundApp {
+                                sendEmptyCharacter()
+                                let adjustedBs = bs + 1
+                                if isChromium {
+                                    applySelectionBackspaces(adjustedBs)
+                                } else {
+                                    applyBackspaces(adjustedBs)
+                                }
+                            } else {
+                                applyBackspaces(bs)
+                            }
+                        }
+                        
+                        // Additional backspace if engine didn't catch all
+                        if abbreviationLength > bs {
+                            let remaining = abbreviationLength - bs
+                            applyBackspaces(remaining)
+                        }
+                        
+                        // Insert the expansion
+                        postText(expansion)
+                        _engine.reset()
+                        return nil  // Consume the break key event
+                    }
+                }
+                
                 let (bs, out) = _engine.commit()
                 if bs > 0 {
                     if isCompoundApp {
@@ -472,5 +563,83 @@ final class EventTap: ObservableObject {
         let up = CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: false)
         up?.setIntegerValueField(.eventSourceStateID, value: syntheticTag)
         up?.post(tap: .cghidEventTap)
+    }
+
+    // MARK: - Hotkey
+
+    /// Detects a "Fn tap" (press-and-release with no other keys) and toggles
+    /// the input method. Returns `true` when the event was consumed by the
+    /// hotkey system; otherwise returns `false` so the caller can continue
+    /// normal processing.
+    private func handleHotkey(type: CGEventType, event: CGEvent) -> Bool {
+        guard UserDefaults.standard.bool(forKey: DefaultsKey.inputMethodHotkeyEnabled) else { return false }
+
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        let flags = event.flags
+        let fnNow = flags.contains(.maskSecondaryFn)
+
+        // ---- Modern Mac keyboards: Fn/Globe sends keyDown/keyUp (keyCode 179) ----
+        if keyCode == 179 {
+            if type == .keyDown {
+                fnIsDown = true
+                fnWasTap = true
+                fnHandledByKeyEvent = true
+                // Suppress so the emoji picker doesn't fire
+                return true
+            }
+            if type == .keyUp {
+                fnIsDown = false
+                if fnWasTap {
+                    triggerToggle()
+                }
+                fnHandledByKeyEvent = false
+                fnWasTap = false
+                // Suppress so the emoji picker doesn't fire
+                return true
+            }
+        }
+
+        // ---- Older keyboards / fallback: detect via flagsChanged ----
+        if type == .flagsChanged {
+            if fnNow && !fnIsDown {
+                // Fn just pressed
+                fnIsDown = true
+                fnWasTap = true
+                // Suppress the modifier-change event
+                return true
+            }
+
+            if !fnNow && fnIsDown {
+                // Fn just released
+                fnIsDown = false
+                if fnWasTap {
+                    triggerToggle()
+                }
+                fnWasTap = false
+                // Suppress the modifier-change event
+                return true
+            }
+        }
+
+        // Any real keypress while Fn is held cancels the tap.
+        if (type == .keyDown || type == .keyUp) && fnIsDown && keyCode != 179 {
+            fnWasTap = false
+        }
+
+        return false
+    }
+
+    private func triggerToggle() {
+        // Debounce: prevent double-toggle when keyboard sends both flagsChanged AND keyCode 179
+        let now = Date()
+        if let last = lastToggleTime, now.timeIntervalSince(last) < 0.2 {
+            return
+        }
+        lastToggleTime = now
+
+        DispatchQueue.main.async { [self] in
+            inputMethodManager.toggle()
+            NSSound.beep()
+        }
     }
 }

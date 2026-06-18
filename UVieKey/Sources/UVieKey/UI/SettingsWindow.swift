@@ -244,6 +244,9 @@ struct GeneralPane: View {
 struct ClipboardPane: View {
     @AppStorage(DefaultsKey.clipboardHistoryEnabled) private var clipboardHistoryEnabled: Bool = true
     @AppStorage(DefaultsKey.clipboardMaxEntries) private var clipboardMaxEntries: Int = 10
+    @AppStorage(DefaultsKey.clipboardAutoSplitEnabled) private var clipboardAutoSplitEnabled: Bool = false
+    @AppStorage(DefaultsKey.clipboardSplitDelimiter) private var clipboardSplitDelimiter: String = "newline"
+    @AppStorage(DefaultsKey.clipboardSplitMinLength) private var clipboardSplitMinLength: Int = 3
     @StateObject private var clipboardManager = ClipboardManager.shared
 
     var body: some View {
@@ -306,6 +309,94 @@ struct ClipboardPane: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 11)
+                    }
+
+                    SettingsCard {
+                        SToggleRow("scissors",
+                                    "Tự động tách nội dung",
+                                    "Tách khối văn bản thành nhiều mục riêng biệt",
+                                    $clipboardAutoSplitEnabled)
+                    }
+
+                    if clipboardAutoSplitEnabled {
+                        SettingsCard {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(spacing: 14) {
+                                    Image(systemName: "line.3.horizontal")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 24)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("Ngắt theo")
+                                            .font(.system(size: 13, weight: .medium))
+                                        Text("Ký tự phân cách giữa các mục")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                }
+                                HStack(spacing: 1) {
+                                    delimiterPill("Dòng mới", "newline")
+                                    delimiterPill("Dấu phẩy", "comma")
+                                    delimiterPill("Dấu chấm phẩy", "semicolon")
+                                }
+                                .padding(2)
+                                .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7))
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 11)
+                        }
+
+                        SettingsCard {
+                            HStack(spacing: 14) {
+                                Image(systemName: "textformat.123")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 24)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Độ dài tối thiểu")
+                                        .font(.system(size: 13, weight: .medium))
+                                    Text("Bỏ qua mục ngắn hơn giới hạn này")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                HStack(spacing: 4) {
+                                    Button {
+                                        if clipboardSplitMinLength > 1 {
+                                            clipboardSplitMinLength -= 1
+                                        }
+                                    } label: {
+                                        Image(systemName: "minus")
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .frame(width: 22, height: 22)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                                    .disabled(clipboardSplitMinLength <= 1)
+
+                                    Text("\(clipboardSplitMinLength)")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .monospacedDigit()
+                                        .frame(width: 28)
+
+                                    Button {
+                                        if clipboardSplitMinLength < 50 {
+                                            clipboardSplitMinLength += 1
+                                        }
+                                    } label: {
+                                        Image(systemName: "plus")
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .frame(width: 22, height: 22)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                                    .disabled(clipboardSplitMinLength >= 50)
+                                }
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 11)
+                        }
                     }
                 }
             }
@@ -381,28 +472,36 @@ struct ClipboardPane: View {
         if text.count <= 60 { return text }
         return String(text.prefix(60)) + "…"
     }
+
+    private func delimiterPill(_ label: String, _ tag: String) -> some View {
+        let active = clipboardSplitDelimiter == tag
+        return Button { clipboardSplitDelimiter = tag } label: {
+            Text(label)
+                .font(.system(size: 11, weight: active ? .semibold : .regular))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
+                .background(active ? Color.accentColor : .clear,
+                             in: RoundedRectangle(cornerRadius: 5))
+                .foregroundStyle(active ? .white : .primary)
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 // MARK: - Keyboard Pane
 
 struct KeyboardPane: View {
-    @AppStorage(DefaultsKey.quickStart)         private var quickStart: Bool = false
-    @AppStorage(DefaultsKey.quickTelex)         private var quickTelex: Bool = false
     @AppStorage(DefaultsKey.uppercaseFirstChar) private var uppercaseFirstChar: Bool = false
+    @AppStorage(DefaultsKey.inputMethodHotkeyEnabled) private var hotkeyEnabled: Bool = true
 
     var body: some View {
         PaneScroll {
-            PaneSection("Gõ tắt") {
+            PaneSection("Phím tắt") {
                 SettingsCard {
-                    SToggleRow("bolt",
-                                "Gõ tắt phụ âm đầu",
-                                "j → gi  ·  f → ph  ·  w → qu  ·  z → gi",
-                                $quickStart)
-                    SCardDivider()
-                    SToggleRow("keyboard",
-                                "Gõ tắt Telex nâng cao",
-                                "cc → ch  ·  gg → gi  ·  kk → c  ·  nn → ng  ·  pp → ph  ·  tt → th",
-                                $quickTelex)
+                    SToggleRow("command",
+                                "Fn để chuyển nhanh",
+                                "Nhấn phím Fn để bật / tắt Tiếng Việt",
+                                $hotkeyEnabled)
                 }
             }
 
@@ -422,12 +521,10 @@ struct KeyboardPane: View {
 
 struct MacroPane: View {
     @AppStorage(DefaultsKey.macroEnabled) private var macroEnabled: Bool = false
-    // Placeholder data — logic agent will wire up real model
-    private let sampleMacros: [(String, String)] = [
-        ("btw",  "by the way"),
-        ("omg",  "oh my god"),
-        ("brb",  "be right back"),
-    ]
+    @StateObject private var macroManager = MacroManager.shared
+    @State private var showingAddSheet = false
+    @State private var newAbbreviation = ""
+    @State private var newExpansion = ""
 
     var body: some View {
         PaneScroll {
@@ -458,21 +555,25 @@ struct MacroPane: View {
                         .padding(.vertical, 8)
                         .background(Color.primary.opacity(0.04))
 
-                        ForEach(sampleMacros, id: \.0) { macro in
+                        ForEach(macroManager.macros) { macro in
                             SCardDivider()
                             HStack {
-                                Text(macro.0)
+                                Text(macro.abbreviation)
                                     .font(.system(size: 12, design: .monospaced))
                                     .foregroundStyle(.blue)
                                     .frame(width: 100, alignment: .leading)
-                                Text(macro.1)
+                                Text(macro.expansion)
                                     .font(.system(size: 12))
                                     .foregroundStyle(.primary)
                                 Spacer()
-                                Image(systemName: "trash")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .opacity(0.5)
+                                Button {
+                                    macroManager.deleteMacro(macro)
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 9)
@@ -482,18 +583,21 @@ struct MacroPane: View {
                     HStack {
                         Spacer()
                         Button {
-                            // logic agent will implement
+                            showingAddSheet = true
                         } label: {
                             Label("Thêm Macro", systemImage: "plus.circle.fill")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(Color.blue)
                         }
                         .buttonStyle(.plain)
-                        .disabled(true)
-
-                        Text("(Sắp ra mắt)")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
+                    }
+                    .sheet(isPresented: $showingAddSheet) {
+                        AddMacroSheet(abbreviation: $newAbbreviation, expansion: $newExpansion) {
+                            macroManager.addMacro(abbreviation: newAbbreviation, expansion: newExpansion)
+                            newAbbreviation = ""
+                            newExpansion = ""
+                            showingAddSheet = false
+                        }
                     }
                 }
             }
@@ -532,7 +636,9 @@ struct AdvancedPane: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        ComingSoonBadge()
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.green)
                     }
                     .padding(14)
                 }
@@ -809,5 +915,54 @@ struct ComingSoonBadge: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(.orange.opacity(0.1), in: Capsule())
+    }
+}
+
+// MARK: - Add Macro Sheet
+
+struct AddMacroSheet: View {
+    @Binding var abbreviation: String
+    @Binding var expansion: String
+    let onSave: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Thêm Macro mới")
+                .font(.system(size: 16, weight: .semibold))
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Viết tắt")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                TextField("Ví dụ: btw", text: $abbreviation)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 13, design: .monospaced))
+            }
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Văn bản thay thế")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                TextField("Ví dụ: by the way", text: $expansion)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 13))
+            }
+            
+            HStack(spacing: 12) {
+                Button("Hủy") {
+                    dismiss()
+                }
+                .buttonStyle(.bordered)
+                
+                Button("Lưu") {
+                    onSave()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(abbreviation.isEmpty || expansion.isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 400)
     }
 }

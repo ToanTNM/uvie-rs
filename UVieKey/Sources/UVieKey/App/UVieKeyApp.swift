@@ -32,13 +32,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             DefaultsKey.checkSpelling:      true,
             DefaultsKey.smartSwitchKey:     false,
             DefaultsKey.uppercaseFirstChar: false,
-            DefaultsKey.quickStart:         false,
-            DefaultsKey.quickTelex:         false,
             DefaultsKey.macroEnabled:       false,
             DefaultsKey.modernOrthography:  true,
             DefaultsKey.inputMethod:        "telex",
             DefaultsKey.clipboardHistoryEnabled: true,
             DefaultsKey.clipboardMaxEntries: 10,
+            DefaultsKey.clipboardAutoSplitEnabled: false,
+            DefaultsKey.clipboardSplitDelimiter: "newline",
+            DefaultsKey.clipboardSplitMinLength: 3,
+            DefaultsKey.inputMethodHotkeyEnabled: true,
         ])
 
         ClipboardManager.shared.startObserving()

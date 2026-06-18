@@ -14,12 +14,6 @@ func uvie_engine_reset(_ engine: OpaquePointer?)
 @_silgen_name("uvie_engine_set_input_method")
 func uvie_engine_set_input_method(_ engine: OpaquePointer?, _ method: Int32)
 
-@_silgen_name("uvie_engine_set_quick_start")
-func uvie_engine_set_quick_start(_ engine: OpaquePointer?, _ enabled: Int32)
-
-@_silgen_name("uvie_engine_set_quick_telex")
-func uvie_engine_set_quick_telex(_ engine: OpaquePointer?, _ enabled: Int32)
-
 @_silgen_name("uvie_engine_set_modern_orthography")
 func uvie_engine_set_modern_orthography(_ engine: OpaquePointer?, _ enabled: Int32)
 
@@ -37,6 +31,9 @@ func uvie_engine_is_composing(_ engine: OpaquePointer?) -> Int32
 
 @_silgen_name("uvie_engine_committed_text")
 func uvie_engine_committed_text(_ engine: OpaquePointer?, _ out_buf: UnsafeMutablePointer<CChar>?, _ out_len: Int) -> Int
+
+@_silgen_name("uvie_engine_current_output")
+func uvie_engine_current_output(_ engine: OpaquePointer?, _ out_buf: UnsafeMutablePointer<CChar>?, _ out_len: Int) -> Int
 
 /// Diff-based Vietnamese input engine wrapper.
 /// Returns (backspace_count, new_output) from Rust on each keystroke.
@@ -63,16 +60,6 @@ final class EngineBridge {
     func setInputMethod(_ method: InputMethod) {
         guard let engine else { return }
         uvie_engine_set_input_method(engine, method == .vni ? 1 : 0)
-    }
-
-    func setQuickStart(_ enabled: Bool) {
-        guard let engine else { return }
-        uvie_engine_set_quick_start(engine, enabled ? 1 : 0)
-    }
-
-    func setQuickTelex(_ enabled: Bool) {
-        guard let engine else { return }
-        uvie_engine_set_quick_telex(engine, enabled ? 1 : 0)
     }
 
     func setModernOrthography(_ enabled: Bool) {
@@ -114,6 +101,13 @@ final class EngineBridge {
         guard let engine else { return "" }
         var buf = [CChar](repeating: 0, count: 128)
         _ = uvie_engine_committed_text(engine, &buf, buf.count)
+        return String(cString: buf)
+    }
+    
+    func currentOutput() -> String {
+        guard let engine else { return "" }
+        var buf = [CChar](repeating: 0, count: 128)
+        _ = uvie_engine_current_output(engine, &buf, buf.count)
         return String(cString: buf)
     }
 }

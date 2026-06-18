@@ -65,6 +65,12 @@ int uvie_engine_is_composing(const UvieEngine *engine);
  */
 size_t uvie_engine_committed_text(const UvieEngine *engine, char *out_buf, size_t out_len);
 
+/**
+ * Get the current full output (committed + composing).
+ * Returns byte count of written string (excluding null terminator).
+ */
+size_t uvie_engine_current_output(const UvieEngine *engine, char *out_buf, size_t out_len);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

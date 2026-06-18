@@ -94,6 +94,15 @@ impl UltraFastViEngine {
     /// Current logical raw length (may differ from push count due to double-cancel).
     pub fn raw_len(&self) -> usize { self.raw_len }
 
+    /// Length of the diff-mode raw character buffer.
+    pub fn raw_chars_len(&self) -> usize { self.diff.raw_chars.len() }
+
+    /// Copy the diff-mode raw characters into a `String` for debugging/tests.
+    #[cfg(feature = "std")]
+    pub fn raw_chars_string(&self) -> String {
+        self.diff.raw_chars.iter().collect()
+    }
+
     pub fn current_composing(&self) -> &str { &self.out_buf }
 
     /// Returns the classify flags for a raw byte in the current input mode.
