@@ -94,12 +94,17 @@ final class EventTap: ObservableObject {
     /// Auto-capitalize state: track if we're at the start of a sentence
     private var isAtSentenceStart = true
 
+    /// App switch detection: prevent ghost characters from previous app
+    private var previousBundleID: String = ""
+    private var appSwitchObserver: NSObjectProtocol?
+
     init(inputMethodManager: InputMethodManager) {
         self.inputMethodManager = inputMethodManager
         self.axInjector = AXTextInjector(engine: _engine)
         eventSource = CGEventSource(stateID: .privateState)
         applyEngineSettings()
         observeSettingsChanges()
+        observeAppSwitch()
     }
 
     deinit {
@@ -107,6 +112,9 @@ final class EventTap: ObservableObject {
         appDetector.stop()
         if let defaultsObserver {
             NotificationCenter.default.removeObserver(defaultsObserver)
+        }
+        if let appSwitchObserver {
+            NotificationCenter.default.removeObserver(appSwitchObserver)
         }
     }
 
@@ -192,6 +200,24 @@ final class EventTap: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             self?.applyEngineSettings()
+        }
+    }
+
+    private func observeAppSwitch() {
+        appSwitchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            let currentBundleID = self.appDetector.bundleID
+            if currentBundleID != self.previousBundleID {
+                self.previousBundleID = currentBundleID
+                // Reset engine to clear any stuck state from previous app
+                self._engine.reset()
+                // Reset auto-capitalize state for new app context
+                self.isAtSentenceStart = true
+            }
         }
     }
 
