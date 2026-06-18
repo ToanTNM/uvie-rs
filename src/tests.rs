@@ -1457,6 +1457,9 @@ fn test_double_w_cancel() {
     // BUG: honw should become "hơn" (w modifies o to ơ, n remains coda)
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "honw"), "hơn", "honw should produce hơn");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "hoawjc"), "hoặc", "hoawjc should produce hoặc");
 }
 
 // ===== feed_diff parity tests =====

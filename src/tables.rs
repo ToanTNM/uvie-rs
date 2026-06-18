@@ -200,6 +200,7 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
     NucleusEntry { seq: &['â', 'y'], tone_idx: 0 }, // ây
     NucleusEntry { seq: &['â', 'o'], tone_idx: 0 }, // âo (nấo etc.)
     NucleusEntry { seq: &['ă', 'y'], tone_idx: 0 }, // ăy (rare)
+    NucleusEntry { seq: &['o', 'ă'], tone_idx: 1 }, // oă (hoăng, loăng quăng)
     NucleusEntry { seq: &['ê', 'u'], tone_idx: 0 }, // êu (nếu → tone on ê)
     NucleusEntry { seq: &['ô', 'i'], tone_idx: 0 }, // ôi
     NucleusEntry { seq: &['ơ', 'i'], tone_idx: 0 }, // ơi

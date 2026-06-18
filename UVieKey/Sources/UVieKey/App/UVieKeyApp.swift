@@ -42,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             DefaultsKey.clipboardSplitMinLength: 3,
             DefaultsKey.inputMethodHotkeyEnabled: true,
             DefaultsKey.autoDisableOnNonLatinLayout: false,
+            DefaultsKey.keepPopoverOpen: false,
         ])
 
         ClipboardManager.shared.startObserving()

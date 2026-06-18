@@ -12,6 +12,15 @@ final class MenuBarController: ObservableObject {
     private var eventTap: EventTap?
     private var inputMethodManager: InputMethodManager?
     private var cancellables = Set<AnyCancellable>()
+    private var defaultsObserver: NSObjectProtocol?
+
+    var keepPopoverOpen: Bool {
+        get { UserDefaults.standard.bool(forKey: DefaultsKey.keepPopoverOpen) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: DefaultsKey.keepPopoverOpen)
+            updatePopoverBehavior()
+        }
+    }
 
     var inputMethod: InputMethod {
         get { inputMethodManager?.inputMethod ?? .telex }
@@ -54,11 +63,32 @@ final class MenuBarController: ObservableObject {
     private func setupPopover() {
         let p = NSPopover()
         p.contentSize = NSSize(width: 280, height: 388)
-        p.behavior = .transient
+        p.behavior = keepPopoverOpen ? .applicationDefined : .transient
         p.contentViewController = NSHostingController(
             rootView: MenuBarPopoverView(controller: self)
         )
         popover = p
+
+        // Observe defaults changes
+        defaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.updatePopoverBehavior()
+            }
+        }
+    }
+
+    private func updatePopoverBehavior() {
+        popover?.behavior = keepPopoverOpen ? .applicationDefined : .transient
+    }
+
+    deinit {
+        if let observer = defaultsObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     // MARK: Icon — drawn as NSImage for pixel-perfect vertical centering
@@ -124,6 +154,7 @@ struct MenuBarPopoverView: View {
     @AppStorage(DefaultsKey.uppercaseFirstChar) private var uppercaseFirstChar: Bool = false
     @AppStorage(DefaultsKey.macroEnabled)       private var macroEnabled: Bool = false
     @AppStorage(DefaultsKey.autoDisableOnNonLatinLayout) private var autoDisableOnNonLatinLayout: Bool = false
+    @AppStorage(DefaultsKey.keepPopoverOpen)    private var keepPopoverOpen: Bool = false
     @StateObject private var layoutMonitor = KeyboardLayoutMonitor.shared
 
     var body: some View {
@@ -251,6 +282,9 @@ struct MenuBarPopoverView: View {
             toggleRow("textformat",                  "Viết hoa đầu câu",           $uppercaseFirstChar)
             rowLabel("GÕ NHANH")
             toggleRow("doc.text",                    "Macro văn bản",              $macroEnabled)
+
+            rowLabel("MENUBAR")
+            toggleRow("pin",                           "Giữ mở",                    $keepPopoverOpen)
 
             // Show when non-Latin layout detected
             if autoDisableOnNonLatinLayout && layoutMonitor.isNonLatinLayout {
