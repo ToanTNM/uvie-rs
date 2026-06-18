@@ -25,9 +25,10 @@ final class AXTextInjector {
         guard let element = getFocusedTextElement() else { return false }
 
         let (bs, out) = engine.feed(char: char)
-        guard bs > 0 || !out.isEmpty else {
-            // No change — but we still need to show the character
-            // (happens when engine returns empty for a literal char)
+        // Check if engine processed the character (even if output is empty for literal chars)
+        // If engine is composing or produced output, we should inject
+        guard engine.isComposing || bs > 0 || !out.isEmpty else {
+            // Engine didn't process and we're not composing — let OS handle it
             return false
         }
 
@@ -47,7 +48,11 @@ final class AXTextInjector {
         guard let element = getFocusedTextElement() else { return false }
 
         let (bs, out) = engine.backspace()
-        guard bs > 0 || !out.isEmpty else { return false }
+        // Inject if: we have backspaces, we have output, or engine is still composing
+        guard engine.isComposing || bs > 0 || !out.isEmpty else {
+            // Nothing to do — let OS handle backspace
+            return false
+        }
 
         guard let current = getTextValue(element) else { return false }
 

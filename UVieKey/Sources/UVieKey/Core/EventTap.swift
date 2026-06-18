@@ -90,6 +90,9 @@ final class EventTap: ObservableObject {
     private var fnHandledByKeyEvent = false
     private var lastToggleTime: Date?
 
+    /// Auto-capitalize state: track if we're at the start of a sentence
+    private var isAtSentenceStart = true
+
     init(inputMethodManager: InputMethodManager) {
         self.inputMethodManager = inputMethodManager
         self.axInjector = AXTextInjector(engine: _engine)
@@ -246,9 +249,15 @@ final class EventTap: ObservableObject {
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         let flags = event.flags
 
-        // Pass through modifier combinations
-        if flags.contains(.maskCommand) || flags.contains(.maskControl) ||
-           flags.contains(.maskAlternate) || flags.contains(.maskSecondaryFn) {
+        // Pass through modifier combinations (except Option+Backspace which we handle specially)
+        let isAlternateOnly = flags.contains(.maskAlternate) &&
+                             !flags.contains(.maskCommand) &&
+                             !flags.contains(.maskControl) &&
+                             !flags.contains(.maskSecondaryFn)
+        let isOptionBackspace = isAlternateOnly && keyCode == 51
+
+        if (flags.contains(.maskCommand) || flags.contains(.maskControl) ||
+           flags.contains(.maskAlternate) || flags.contains(.maskSecondaryFn)) && !isOptionBackspace {
             return Unmanaged.passRetained(event)
         }
 
@@ -274,10 +283,40 @@ final class EventTap: ObservableObject {
                 return Unmanaged.passRetained(event)
             }
 
+            // Option+Backspace: OS will delete entire word, so we need to reset engine
+            if isOptionBackspace {
+                if _engine.isComposing {
+                    // Get composing text BEFORE resetting
+                    let composing = _engine.currentOutput()
+                    // Clear engine state - the OS will handle the actual word deletion
+                    _engine.reset()
+                    // Also need to clear the composing text from screen
+                    if !composing.isEmpty {
+                        if isCompoundApp {
+                            sendEmptyCharacter()
+                            let adjustedBs = composing.count + 1
+                            if isChromium {
+                                applySelectionBackspaces(adjustedBs)
+                            } else {
+                                applyBackspaces(adjustedBs)
+                            }
+                        } else {
+                            applyBackspaces(composing.count)
+                        }
+                    }
+                }
+                // Pass through to let OS handle the word deletion
+                return Unmanaged.passRetained(event)
+            }
+
             let (bs, out) = _engine.backspace()
-            if bs == 0 && out.isEmpty {
+            if bs == 0 && out.isEmpty && !_engine.isComposing {
                 // Not composing — let OS handle it
                 return Unmanaged.passRetained(event)
+            }
+            // Debug: log if engine is composing but backspace returned empty (shouldn't happen)
+            if bs == 0 && out.isEmpty && _engine.isComposing {
+                print("⚠️ EventTap: Engine isComposing but backspace returned empty")
             }
 
             if isCompoundApp {
@@ -358,6 +397,10 @@ final class EventTap: ObservableObject {
                     }
                 }
                 postText(out)
+
+                // Check if the committed text ends with sentence delimiter
+                // Note: Space after .!? doesn't make it a new sentence start yet
+                // The actual .!? character will set isAtSentenceStart when typed
             }
             return Unmanaged.passRetained(event)
         }
@@ -374,10 +417,10 @@ final class EventTap: ObservableObject {
                     if let expansion = macroManager.findExpansion(for: currentText) {
                         // Backspace the abbreviation
                         let abbreviationLength = currentText.count
-                        
+
                         // Use the engine's commit to properly backspace first
                         let (bs, _) = _engine.commit()
-                        
+
                         if bs > 0 {
                             if isCompoundApp {
                                 sendEmptyCharacter()
@@ -391,20 +434,24 @@ final class EventTap: ObservableObject {
                                 applyBackspaces(bs)
                             }
                         }
-                        
+
                         // Additional backspace if engine didn't catch all
                         if abbreviationLength > bs {
                             let remaining = abbreviationLength - bs
                             applyBackspaces(remaining)
                         }
-                        
+
                         // Insert the expansion
                         postText(expansion)
                         _engine.reset()
+
+                        // Enter/Return after macro expansion starts new sentence
+                        updateSentenceStartStateForBreakKey(keyCode)
+
                         return nil  // Consume the break key event
                     }
                 }
-                
+
                 let (bs, out) = _engine.commit()
                 if bs > 0 {
                     if isCompoundApp {
@@ -420,6 +467,9 @@ final class EventTap: ObservableObject {
                     }
                 }
                 postText(out)
+
+                // Enter/Return starts a new sentence
+                updateSentenceStartStateForBreakKey(keyCode)
             }
             return Unmanaged.passRetained(event)
         }
@@ -433,7 +483,13 @@ final class EventTap: ObservableObject {
             return Unmanaged.passRetained(event)
         }
 
-        let (bs, out) = _engine.feed(char: firstChar)
+        // Apply auto-capitalize if at sentence start
+        let transformedChar = applyAutoCapitalize(to: firstChar)
+
+        let (bs, out) = _engine.feed(char: transformedChar)
+
+        // Update sentence start state based on what was typed
+        updateSentenceStartState(after: firstChar)
         if bs > 0 {
             if isCompoundApp {
                 sendEmptyCharacter()
@@ -507,6 +563,45 @@ final class EventTap: ObservableObject {
         event.keyboardGetUnicodeString(maxStringLength: 4, actualStringLength: &length, unicodeString: &buffer)
         guard length > 0 else { return nil }
         return String(utf16CodeUnits: buffer, count: length).first
+    }
+
+    // MARK: - Auto Capitalize Helpers
+
+    /// Check if character is a sentence delimiter (. ! ?)
+    private func isSentenceDelimiter(_ char: Character) -> Bool {
+        return char == "." || char == "!" || char == "?"
+    }
+
+    /// Transform a character to uppercase if auto-capitalize is enabled and at sentence start
+    private func applyAutoCapitalize(to char: Character) -> Character {
+        let shouldCapitalize = UserDefaults.standard.bool(forKey: DefaultsKey.uppercaseFirstChar)
+        guard shouldCapitalize && isAtSentenceStart else { return char }
+
+        // Only capitalize alphabetic characters
+        guard char.isLetter else { return char }
+
+        // Mark that we've processed the first character of sentence
+        isAtSentenceStart = false
+        return char.uppercased().first ?? char
+    }
+
+    /// Update sentence start state based on the key that was just typed
+    private func updateSentenceStartState(after char: Character) {
+        if isSentenceDelimiter(char) {
+            isAtSentenceStart = true
+        } else if char.isLetter || char.isNumber {
+            // After typing a letter/number, we're no longer at sentence start
+            isAtSentenceStart = false
+        }
+        // Space and other chars don't change state
+    }
+
+    /// Update sentence start state for break keys (Enter, etc.)
+    private func updateSentenceStartStateForBreakKey(_ keyCode: Int64) {
+        // Enter/Return starts a new sentence
+        if keyCode == 36 || keyCode == 76 {  // 36 = Return, 76 = Enter (numpad)
+            isAtSentenceStart = true
+        }
     }
 
     // MARK: - Synthetic Output
