@@ -49,7 +49,8 @@ static LEGAL_ONSETS: &[&[u8]] = &[
     // đ (base 'd', but in practice the engine stores raw 'd' for đ onset too)
     b"d",
     // Foreign/extended allowed as onset
-    b"f", b"w", b"z", b"j",
+    // NOTE: 'f' removed to fix "fix" -> "fĩ" bug (English word interference)
+    b"w", b"z", b"j",
 ];
 
 /// Returns `true` if `onset` (slice of raw base bytes before the nucleus) is
@@ -60,7 +61,8 @@ pub fn is_legal_onset(onset: &[u8]) -> bool {
         1 => {
             let b = onset[0];
             // Any single lowercase consonant that is not a pure vowel key
-            matches!(b, b'b'|b'c'|b'd'|b'f'|b'g'|b'h'|b'j'|b'k'|b'l'|
+            // NOTE: 'f' excluded to fix "fix" -> "fĩ" bug (English word interference)
+            matches!(b, b'b'|b'c'|b'd'|b'g'|b'h'|b'j'|b'k'|b'l'|
                         b'm'|b'n'|b'p'|b'q'|b'r'|b's'|b't'|b'v'|b'w'|
                         b'x'|b'z')
         }
