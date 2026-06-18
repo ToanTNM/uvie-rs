@@ -191,6 +191,9 @@ impl Diffable for UltraFastViEngine {
                 let (bs, _) = Self::diff_into(&self.diff.prev_rendered, &full_screen, &mut self.diff.diff_suffix);
 
                 self.diff.raw_chars = new_syl_raw;
+                // CRITICAL FIX: Sync raw_len with diff.raw_chars after V-C-V split
+                // Without this, backspace() will use wrong indices when replaying keystrokes
+                self.raw_len = self.diff.raw_chars.len();
                 self.diff.prev_rendered.clear();
                 let _ = self.diff.prev_rendered.push_str(&new_composed2);
                 self.diff.prev_inner_render.clear();
@@ -258,6 +261,18 @@ impl Diffable for UltraFastViEngine {
         let (bs, _) = Self::diff_into(&prev, &new_composed, &mut self.diff.diff_suffix);
         self.diff.prev_rendered.clear();
         let _ = self.diff.prev_rendered.push_str(&new_composed);
+
+        // Debug validation: ensure raw_len stays in sync with diff.raw_chars
+        #[cfg(debug_assertions)]
+        {
+            if self.raw_len != self.diff.raw_chars.len() {
+                panic!(
+                    "raw_len ({}) != diff.raw_chars.len() ({}) after backspace_diff",
+                    self.raw_len, self.diff.raw_chars.len()
+                );
+            }
+        }
+
         (bs, &self.diff.diff_suffix)
     }
 

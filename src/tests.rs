@@ -1196,6 +1196,100 @@ fn debug_gif_inner() {
 }
 
 #[test]
+fn test_vcv_backspace_retype_composes_correctly() {
+    // Regression test for intermittent typing failure after backspace + retype.
+    // After V-C-V split, backspace, then retyping should still produce composed characters.
+    use crate::diff::Diffable;
+
+    let mut e = UltraFastViEngine::new();
+    let mut screen = String::new();
+
+    // Type "neebo" which triggers V-C-V split: "nê" committed, "bo" composing
+    for ch in "neebo".chars() {
+        let (bs, suffix) = e.feed_diff(ch);
+        let sc: Vec<char> = screen.chars().collect();
+        screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+        screen.push_str(suffix);
+    }
+    assert_eq!(screen, "nêbo", "after neebo: screen should show 'nêbo'");
+    assert_eq!(e.committed_text_diff(), "nê", "after neebo: committed should be 'nê'");
+    assert_eq!(e.current_composing_diff(), "bo", "after neebo: composing should be 'bo'");
+
+    // Backspace once - should remove 'o'
+    let (bs, suffix) = e.backspace_diff();
+    let sc: Vec<char> = screen.chars().collect();
+    screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+    screen.push_str(suffix);
+    assert_eq!(screen, "nêb", "after backspace: screen should show 'nêb'");
+
+    // Type 'a' - should produce composed "ba", not raw "a"
+    let (bs, suffix) = e.feed_diff('a');
+    let sc: Vec<char> = screen.chars().collect();
+    screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+    screen.push_str(suffix);
+
+    // The key assertion: 'a' should be composed, not raw
+    assert!(
+        screen.ends_with("ba") || screen.ends_with("bá") || screen.ends_with("bà") ||
+        screen.ends_with("bả") || screen.ends_with("bã") || screen.ends_with("bạ"),
+        "after typing 'a' following backspace, screen should show composed Vietnamese, got: {}",
+        screen
+    );
+
+    // Verify engine state consistency
+    assert_eq!(
+        e.raw_len(),
+        e.raw_chars_len(),
+        "raw_len should equal raw_chars.len() after backspace+retype"
+    );
+}
+
+#[test]
+fn test_vcv_multiple_backspace_then_retype() {
+    // Test multiple backspaces after V-C-V split, then retype
+    use crate::diff::Diffable;
+
+    let mut e = UltraFastViEngine::new();
+    let mut screen = String::new();
+
+    // Type "neebo" → V-C-V split
+    for ch in "neebo".chars() {
+        let (bs, suffix) = e.feed_diff(ch);
+        let sc: Vec<char> = screen.chars().collect();
+        screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+        screen.push_str(suffix);
+    }
+
+    // Backspace 3 times to clear composing text
+    for _ in 0..3 {
+        let (bs, suffix) = e.backspace_diff();
+        let sc: Vec<char> = screen.chars().collect();
+        screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+        screen.push_str(suffix);
+    }
+
+    // Verify state is clean
+    assert_eq!(e.current_composing_diff(), "", "composing should be empty after clearing");
+
+    // Type 'a' - should start fresh composition
+    let (bs, suffix) = e.feed_diff('a');
+    let sc: Vec<char> = screen.chars().collect();
+    screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+    screen.push_str(suffix);
+
+    // 'a' alone should just be 'a' (no composition yet)
+    assert!(screen.ends_with('a'), "single 'a' should appear on screen");
+
+    // Type 'a' again - should form 'â'
+    let (bs, suffix) = e.feed_diff('a');
+    let sc: Vec<char> = screen.chars().collect();
+    screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+    screen.push_str(suffix);
+
+    assert!(screen.ends_with('â'), "double 'a' should form 'â', got: {}", screen);
+}
+
+#[test]
 fn debug_gif_step_by_step() {
     let mut e = UltraFastViEngine::new();
     let out_g = e.feed('g').to_string();
