@@ -38,11 +38,16 @@ impl ModifierHandler for UltraFastViEngine {
     fn handle_telex_w(&mut self, caps: bool) {
         let n = self.buf.len();
 
-        for i in (0..n).rev() {
+        // Find nucleus boundaries so w can modify vowels even with coda present
+        let (_onset_end, nucleus_start, nucleus_end, _coda_start) = self.partition_syllable();
+
+        // First pass: look for w's modifier targets (a, o, u) in the nucleus
+        // Search backwards but only within nucleus bounds
+        for i in (nucleus_start..nucleus_end).rev() {
             let syl = self.buf.get(i);
             match syl.base {
                 b'u' => {
-                    if self.is_u_glide(i) { break; }
+                    if self.is_u_glide(i) { continue; }
                     if syl.flags & F_HORN != 0 {
                         let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
                         self.buf.set(i, reverted);
@@ -74,7 +79,7 @@ impl ModifierHandler for UltraFastViEngine {
                     }
                     let updated = self.buf.get(i).clone().with_horn();
                     self.buf.set(i, updated);
-                    if i > 0 {
+                    if i > 0 && i > nucleus_start {
                         let prev = self.buf.get(i - 1);
                         if prev.base == b'u' && prev.flags == 0 && !self.is_u_glide(i - 1) {
                             let promoted = prev.clone().with_horn();
@@ -99,21 +104,24 @@ impl ModifierHandler for UltraFastViEngine {
                     self.reapply_tone_after_nucleus_change();
                     return;
                 }
-                b'w' if syl.flags & F_HORN != 0 => {
-                    let reverted = Syl::literal(b'w', syl.flags & F_CAPS != 0);
-                    self.buf.set(i, reverted);
-                    if self.raw_len > 0 { self.raw_len -= 1; }
-                    self.buf.push(Syl::literal(b'w', caps));
-                    self.reapply_tone_after_nucleus_change();
-                    return;
-                }
-                b'd' => {
-                    break;
-                }
-                _ if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 => {
-                    break;
-                }
                 _ => continue,
+            }
+        }
+
+        // Second pass: look for existing 'w' with F_HORN (for cancellation)
+        for i in (0..n).rev() {
+            let syl = self.buf.get(i);
+            if syl.base == b'w' && syl.flags & F_HORN != 0 {
+                let reverted = Syl::literal(b'w', syl.flags & F_CAPS != 0);
+                self.buf.set(i, reverted);
+                if self.raw_len > 0 { self.raw_len -= 1; }
+                self.buf.push(Syl::literal(b'w', caps));
+                self.reapply_tone_after_nucleus_change();
+                return;
+            }
+            // Stop searching when we hit consonants after checking w-cancellation
+            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 && syl.base != b'w' {
+                break;
             }
         }
 

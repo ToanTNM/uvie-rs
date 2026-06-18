@@ -293,7 +293,19 @@ struct MenuBarPopoverView: View {
     private var clipboardSection: some View {
         if !clipboardManager.history.isEmpty {
             VStack(spacing: 0) {
-                rowLabel("BẢNG NHẮN")
+                HStack {
+                    rowLabel("BẢNG NHẮN")
+                    Spacer()
+                    Button {
+                        clipboardManager.clearHistory()
+                    } label: {
+                        Text("Xoá tất cả")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Color.red.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 12)
+                }
                 ForEach(Array(clipboardManager.previewItems.enumerated()), id: \.offset) { _, item in
                     clipboardRow(item: item)
                 }

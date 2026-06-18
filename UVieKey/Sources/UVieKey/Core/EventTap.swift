@@ -283,27 +283,13 @@ final class EventTap: ObservableObject {
                 return Unmanaged.passRetained(event)
             }
 
-            // Option+Backspace: OS will delete entire word, so we need to reset engine
+            // Option+Backspace: let OS handle word deletion, just reset engine state
             if isOptionBackspace {
+                // Simply reset the engine without sending any backspaces ourselves.
+                // The OS will handle the word deletion natively.
+                // We only need to ensure our internal state is cleared.
                 if _engine.isComposing {
-                    // Get composing text BEFORE resetting
-                    let composing = _engine.currentOutput()
-                    // Clear engine state - the OS will handle the actual word deletion
                     _engine.reset()
-                    // Also need to clear the composing text from screen
-                    if !composing.isEmpty {
-                        if isCompoundApp {
-                            sendEmptyCharacter()
-                            let adjustedBs = composing.count + 1
-                            if isChromium {
-                                applySelectionBackspaces(adjustedBs)
-                            } else {
-                                applyBackspaces(adjustedBs)
-                            }
-                        } else {
-                            applyBackspaces(composing.count)
-                        }
-                    }
                 }
                 // Pass through to let OS handle the word deletion
                 return Unmanaged.passRetained(event)
