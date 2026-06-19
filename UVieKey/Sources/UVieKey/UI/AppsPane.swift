@@ -1,6 +1,63 @@
 import SwiftUI
 import AppKit
 
+// MARK: - Icon Cache
+
+@MainActor
+final class AppIconCache {
+    static let shared = AppIconCache()
+    private let cache = NSCache<NSString, NSImage>()
+
+    private init() {
+        cache.countLimit = 200
+    }
+
+    func icon(for bundleID: String) -> NSImage? {
+        let key = bundleID as NSString
+        if let cached = cache.object(forKey: key) {
+            return cached
+        }
+
+        let image = loadIcon(for: bundleID)
+        if let image = image {
+            cache.setObject(image, forKey: key)
+        }
+        return image
+    }
+
+    private func loadIcon(for bundleID: String) -> NSImage? {
+        // Try to get icon from running app first
+        if let runningApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID }) {
+            return resize(runningApp.icon)
+        }
+
+        // If not running, try to get icon from app path
+        if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            return resize(NSWorkspace.shared.icon(forFile: appURL.path))
+        }
+
+        return nil
+    }
+
+    private func resize(_ image: NSImage?) -> NSImage? {
+        guard let image = image else { return nil }
+        let targetSize = NSSize(width: 64, height: 64)
+        guard image.size.width > targetSize.width || image.size.height > targetSize.height else {
+            return image
+        }
+
+        let resized = NSImage(size: targetSize)
+        resized.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(in: NSRect(origin: .zero, size: targetSize),
+                   from: NSRect(origin: .zero, size: image.size),
+                   operation: .copy,
+                   fraction: 1.0)
+        resized.unlockFocus()
+        return resized
+    }
+}
+
 // MARK: - Apps Pane
 
 struct AppsPane: View {
@@ -208,8 +265,7 @@ struct AppsPane: View {
         let custom = UserDefaults.standard.stringArray(forKey: DefaultsKey.customCompoundApps) ?? []
         let allBundleIDs = defaultCompoundApps + custom
         compoundApps = allBundleIDs.map { bundleID in
-            let icon = loadIcon(for: bundleID)
-            return AppEntry(bundleID: bundleID, icon: icon)
+            AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID))
         }
     }
 
@@ -219,8 +275,7 @@ struct AppsPane: View {
     }
 
     private func addCompoundApp(_ bundleID: String) {
-        let icon = loadIcon(for: bundleID)
-        compoundApps.append(AppEntry(bundleID: bundleID, icon: icon))
+        compoundApps.append(AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID)))
         saveCompoundApps()
     }
 
@@ -232,8 +287,7 @@ struct AppsPane: View {
 
     private func resetCompoundToDefaults() {
         compoundApps = defaultCompoundApps.map { bundleID in
-            let icon = loadIcon(for: bundleID)
-            return AppEntry(bundleID: bundleID, icon: icon)
+            AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID))
         }
         saveCompoundApps()
     }
@@ -242,8 +296,7 @@ struct AppsPane: View {
         let custom = UserDefaults.standard.stringArray(forKey: DefaultsKey.customChromiumApps) ?? []
         let allBundleIDs = defaultChromiumApps + custom
         chromiumApps = allBundleIDs.map { bundleID in
-            let icon = loadIcon(for: bundleID)
-            return AppEntry(bundleID: bundleID, icon: icon)
+            AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID))
         }
     }
 
@@ -253,8 +306,7 @@ struct AppsPane: View {
     }
 
     private func addChromiumApp(_ bundleID: String) {
-        let icon = loadIcon(for: bundleID)
-        chromiumApps.append(AppEntry(bundleID: bundleID, icon: icon))
+        chromiumApps.append(AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID)))
         saveChromiumApps()
     }
 
@@ -266,24 +318,9 @@ struct AppsPane: View {
 
     private func resetChromiumToDefaults() {
         chromiumApps = defaultChromiumApps.map { bundleID in
-            let icon = loadIcon(for: bundleID)
-            return AppEntry(bundleID: bundleID, icon: icon)
+            AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID))
         }
         saveChromiumApps()
-    }
-
-    private func loadIcon(for bundleID: String) -> NSImage? {
-        // Try to get icon from running app first
-        if let runningApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID }) {
-            return runningApp.icon
-        }
-
-        // If not running, try to get icon from app path
-        if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-            return NSWorkspace.shared.icon(forFile: appURL.path)
-        }
-
-        return nil
     }
 
     private func loadAvailableApps() {
@@ -302,7 +339,7 @@ struct AppsPane: View {
             .filter { $0.bundleIdentifier != nil && $0.activationPolicy == .regular }
             .filter { !currentBundleIDs.contains($0.bundleIdentifier!) }
             .map { app in
-                let icon = app.icon
+                let icon = AppIconCache.shared.icon(for: app.bundleIdentifier!) ?? app.icon
                 return RunningApp(bundleID: app.bundleIdentifier!, name: app.localizedName ?? "Unknown", icon: icon)
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
