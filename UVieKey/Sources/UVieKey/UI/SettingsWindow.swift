@@ -6,6 +6,7 @@ import SwiftUI
 final class SettingsWindow {
     static let shared = SettingsWindow()
     private var window: NSWindow?
+    private var hostingController: NSHostingController<SettingsView>?
 
     func show() {
         // Ensure we're on main thread
@@ -16,7 +17,8 @@ final class SettingsWindow {
             return
         }
 
-        if window == nil {
+        // Recreate window if it was closed or invalidated
+        if window == nil || window?.isVisible == false {
             let w = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 660, height: 500),
                 styleMask: [.titled, .closable, .fullSizeContentView],
@@ -26,16 +28,22 @@ final class SettingsWindow {
             w.title = "UVieKey"
             w.titlebarAppearsTransparent = true
             w.isMovableByWindowBackground = true
+            w.isReleasedWhenClosed = false
 
-            // Wrap SwiftUI view in hosting controller
-            let hostingView = NSHostingView(rootView: SettingsView())
-            w.contentView = hostingView
+            // Use NSHostingController for better memory management
+            let controller = NSHostingController(rootView: SettingsView())
+            w.contentViewController = controller
 
-            w.center()
             window = w
+            hostingController = controller
+
+            // Center on screen after setting content
+            w.center()
+            w.setFrameAutosaveName("UVieKeySettingsWindow")
         }
 
-        window?.makeKeyAndOrderFront(nil)
+        guard let w = window else { return }
+        w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 }
