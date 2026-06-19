@@ -341,6 +341,11 @@ final class EventTap: ObservableObject {
             }
 
             let (bs, out) = _engine.backspace()
+            #if DEBUG
+            let composingBs = _engine.currentOutput()
+            let committedBs = _engine.committedText()
+            print("[UVieKey] BACKSPACE keyCode=\(keyCode) bs=\(bs) out='\(out)' composing='\(composingBs)' committed='\(committedBs)' compound=\(isCompoundApp) chromium=\(isChromium)")
+            #endif
             if bs == 0 && out.isEmpty && !_engine.isComposing {
                 // Not composing — let OS handle it
                 return Unmanaged.passRetained(event)
@@ -350,20 +355,22 @@ final class EventTap: ObservableObject {
                 print("⚠️ EventTap: Engine isComposing but backspace returned empty")
             }
 
-            if isCompoundApp {
-                // Step 1: invalidate autocomplete dropdown with empty char
-                sendEmptyCharacter()
-                // Step 2: OpenKey adds +1 backspace for compound apps
-                let adjustedBs = bs + 1
-                if isChromium {
-                    // Chromium: Shift+Left select then overwrite
-                    applySelectionBackspaces(adjustedBs)
+            if bs > 0 {
+                if isCompoundApp {
+                    // Step 1: invalidate autocomplete dropdown with empty char
+                    sendEmptyCharacter()
+                    // Step 2: OpenKey adds +1 backspace for compound apps
+                    let adjustedBs = bs + 1
+                    if isChromium {
+                        // Chromium: Shift+Left select then overwrite
+                        applySelectionBackspaces(adjustedBs)
+                    } else {
+                        // Safari/Notes: normal backspace
+                        applyBackspaces(adjustedBs)
+                    }
                 } else {
-                    // Safari/Notes: normal backspace
-                    applyBackspaces(adjustedBs)
+                    applyBackspaces(bs)
                 }
-            } else {
-                applyBackspaces(bs)
             }
             postText(out)
             return nil
@@ -518,6 +525,11 @@ final class EventTap: ObservableObject {
         let transformedChar = applyAutoCapitalize(to: firstChar)
 
         let (bs, out) = _engine.feed(char: transformedChar)
+        #if DEBUG
+        let composingFeed = _engine.currentOutput()
+        let committedFeed = _engine.committedText()
+        print("[UVieKey] FEED char='\(transformedChar)' keyCode=\(keyCode) bs=\(bs) out='\(out)' composing='\(composingFeed)' committed='\(committedFeed)' compound=\(isCompoundApp) chromium=\(isChromium)")
+        #endif
 
         // Update sentence start state based on what was typed
         updateSentenceStartState(after: firstChar)

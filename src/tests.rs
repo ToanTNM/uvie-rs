@@ -1636,6 +1636,43 @@ fn feed_diff_backspace() {
     assert_eq!(screen, "to");
 }
 
+#[test]
+fn repro_ghost_character_log() {
+    let mut e = UltraFastViEngine::new();
+    let mut screen = String::new();
+    // Simulate user sequence: pass <backspace> <backspace> a s s a ...
+    for ch in "pass".chars() {
+        let (bs, suffix) = e.feed_diff(ch);
+        let suffix = suffix.to_string();
+        let committed = e.committed_text_diff().to_string();
+        let core_out = e.current_output();
+        let sc: Vec<char> = screen.chars().collect();
+        screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+        screen.push_str(&suffix);
+        println!("feed '{}' -> bs={} suffix='{}' screen='{}' diff_committed='{}' core_out='{}'", ch, bs, suffix, screen, committed, core_out);
+    }
+    for _ in 0..2 {
+        let (bs, suffix) = e.backspace_diff();
+        let suffix = suffix.to_string();
+        let committed = e.committed_text_diff().to_string();
+        let core_out = e.current_output();
+        let sc: Vec<char> = screen.chars().collect();
+        screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+        screen.push_str(&suffix);
+        println!("backspace -> bs={} suffix='{}' screen='{}' diff_committed='{}' core_out='{}'", bs, suffix, screen, committed, core_out);
+    }
+    for ch in "assa".chars() {
+        let (bs, suffix) = e.feed_diff(ch);
+        let suffix = suffix.to_string();
+        let committed = e.committed_text_diff().to_string();
+        let core_out = e.current_output();
+        let sc: Vec<char> = screen.chars().collect();
+        screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+        screen.push_str(&suffix);
+        println!("feed '{}' -> bs={} suffix='{}' screen='{}' diff_committed='{}' core_out='{}'", ch, bs, suffix, screen, committed, core_out);
+    }
+}
+
 // ===== Typed Syllable Slots Tests =====
 
 #[test]
