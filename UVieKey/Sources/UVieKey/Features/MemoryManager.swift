@@ -1,20 +1,45 @@
 import Foundation
 import Cocoa
+import Combine
 
 /// Per-app language/input-method memory.
 /// Stores a map of bundleID → packed state (language | codeTable) in NSUserDefaults.
 final class MemoryManager: ObservableObject {
     @Published var isEnabled: Bool {
-        didSet { save() }
+        didSet {
+            guard !isUpdatingFromObserver else { return }
+            save()
+        }
     }
 
     /// Packed: lower bit = language (0=EN, 1=VN), next bits = codeTable
     private var stateMap: [String: Int] = [:]
     private let defaultsKey = "smartSwitchKeyStateMap_v1"
+    private var cancellables = Set<AnyCancellable>()
+    private var isUpdatingFromObserver = false
 
     init() {
         isEnabled = UserDefaults.standard.bool(forKey: DefaultsKey.smartSwitchKey)
         load()
+        observeSettingsChanges()
+    }
+
+    private func observeSettingsChanges() {
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .map { _ in UserDefaults.standard.bool(forKey: DefaultsKey.smartSwitchKey) }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] newEnabled in
+                guard let self, self.isEnabled != newEnabled else { return }
+                self.isUpdatingFromObserver = true
+                self.isEnabled = newEnabled
+                self.isUpdatingFromObserver = false
+            }
+            .store(in: &cancellables)
+    }
+
+    deinit {
+        cancellables.removeAll()
     }
 
     // MARK: - Query / Update
