@@ -297,3 +297,24 @@ pub extern "C" fn uvie_engine_current_output(
     })
     .unwrap_or(0)
 }
+
+/// Get the diff-mode raw keystroke chars currently in the composing buffer.
+/// Returns byte count of written string (excluding null terminator).
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_raw_chars(
+    engine: *const UvieEngine,
+    out_buf: *mut c_char,
+    out_len: usize,
+) -> usize {
+    std::panic::catch_unwind(|| {
+        if engine.is_null() || out_buf.is_null() || out_len == 0 {
+            return 0;
+        }
+        let Some(e) = lock_engine_const(engine) else {
+            return 0;
+        };
+        let s = e.raw_chars_string();
+        write_output(&s, out_buf, out_len)
+    })
+    .unwrap_or(0)
+}

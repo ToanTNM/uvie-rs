@@ -344,7 +344,8 @@ final class EventTap: ObservableObject {
             #if DEBUG
             let composingBs = _engine.currentOutput()
             let committedBs = _engine.committedText()
-            print("[UVieKey] BACKSPACE keyCode=\(keyCode) bs=\(bs) out='\(out)' composing='\(composingBs)' committed='\(committedBs)' compound=\(isCompoundApp) chromium=\(isChromium)")
+            let rawBs = _engine.rawChars()
+            print("[UVieKey] BACKSPACE keyCode=\(keyCode) bs=\(bs) out='\(out)' composing='\(composingBs)' committed='\(committedBs)' raw='\(rawBs)' isComposing=\(_engine.isComposing) compound=\(isCompoundApp) chromium=\(isChromium)")
             #endif
             if bs == 0 && out.isEmpty && !_engine.isComposing {
                 // Not composing — let OS handle it
@@ -528,7 +529,8 @@ final class EventTap: ObservableObject {
         #if DEBUG
         let composingFeed = _engine.currentOutput()
         let committedFeed = _engine.committedText()
-        print("[UVieKey] FEED char='\(transformedChar)' keyCode=\(keyCode) bs=\(bs) out='\(out)' composing='\(composingFeed)' committed='\(committedFeed)' compound=\(isCompoundApp) chromium=\(isChromium)")
+        let rawFeed = _engine.rawChars()
+        print("[UVieKey] FEED char='\(transformedChar)' keyCode=\(keyCode) bs=\(bs) out='\(out)' composing='\(composingFeed)' committed='\(committedFeed)' raw='\(rawFeed)' compound=\(isCompoundApp) chromium=\(isChromium)")
         #endif
 
         // Update sentence start state based on what was typed
