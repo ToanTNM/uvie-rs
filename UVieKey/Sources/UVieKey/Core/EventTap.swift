@@ -276,6 +276,15 @@ final class EventTap: ObservableObject {
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         let flags = event.flags
 
+        // DEBUG: Trace ghost character issue
+        if type == .keyDown {
+            let composing = _engine.currentOutput()
+            let committed = _engine.committedText()
+            if !composing.isEmpty || !committed.isEmpty {
+                NSLog("[UVieKey] keystroke - keyCode: \(keyCode), composing: '\(composing)', committed: '\(committed)'")
+            }
+        }
+
         // Pass through modifier combinations (except Option+Backspace which we handle specially)
         let isAlternateOnly = flags.contains(.maskAlternate) &&
                              !flags.contains(.maskCommand) &&

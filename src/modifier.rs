@@ -48,6 +48,10 @@ impl ModifierHandler for UltraFastViEngine {
             match syl.base {
                 b'u' => {
                     if self.is_u_glide(i) { continue; }
+                    // FIX: For "uuw" -> "ưu", skip 'u' that has another 'u' BEFORE it (in search direction)
+                    // Since we search backwards, i-1 is the "next" char in forward direction
+                    // This ensures w modifies the FIRST 'u' in a consecutive "uu" sequence
+                    if i > nucleus_start && self.buf.get(i - 1).base == b'u' { continue; }
                     if syl.flags & F_HORN != 0 {
                         let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
                         self.buf.set(i, reverted);
