@@ -279,10 +279,12 @@ final class EventTap: ObservableObject {
         // DEBUG: Trace ghost character issue
         if type == .keyDown {
             let composing = _engine.currentOutput()
+            #if DEBUG
             let committed = _engine.committedText()
             if !composing.isEmpty || !committed.isEmpty {
                 NSLog("[UVieKey] keystroke - keyCode: \(keyCode), composing: '\(composing)', committed: '\(committed)'")
             }
+            #endif
         }
 
         // Pass through modifier combinations (except Option+Backspace which we handle specially)
