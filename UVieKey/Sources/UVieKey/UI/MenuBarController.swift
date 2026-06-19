@@ -137,11 +137,7 @@ final class MenuBarController: ObservableObject {
             popover.close()
         }
 
-        // Show settings on main thread
-        DispatchQueue.main.async { [weak self] in
-            guard self != nil else { return }
-            SettingsWindow.shared.show()
-        }
+        SettingsWindow.shared.show()
     }
 
     func quit() { NSApp.terminate(nil) }

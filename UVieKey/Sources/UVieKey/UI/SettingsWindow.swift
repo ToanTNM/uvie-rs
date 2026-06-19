@@ -3,10 +3,11 @@ import SwiftUI
 // MARK: - Window Controller
 
 @MainActor
-final class SettingsWindow {
+final class SettingsWindow: NSObject, NSWindowDelegate {
     static let shared = SettingsWindow()
     private var window: NSWindow?
-    private var hostingController: NSHostingController<SettingsView>?
+
+    private override init() {}
 
     func show() {
         // Ensure we're on main thread
@@ -29,22 +30,36 @@ final class SettingsWindow {
             w.titlebarAppearsTransparent = true
             w.isMovableByWindowBackground = true
             w.isReleasedWhenClosed = false
+            w.delegate = self
 
             // Use NSHostingController for better memory management
             let controller = NSHostingController(rootView: SettingsView())
             w.contentViewController = controller
 
             window = w
-            hostingController = controller
 
-            // Center on screen after setting content
-            w.center()
-            w.setFrameAutosaveName("UVieKeySettingsWindow")
+            // Center on screen
+            if let screen = NSScreen.main {
+                let screenFrame = screen.visibleFrame
+                let windowFrame = w.frame
+                let x = screenFrame.midX - windowFrame.width / 2
+                let y = screenFrame.midY - windowFrame.height / 2
+                w.setFrameOrigin(NSPoint(x: x, y: y))
+            }
         }
 
         guard let w = window else { return }
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        // Cleanup window and its content to prevent memory leaks
+        if let w = notification.object as? NSWindow, w === window {
+            window?.contentViewController = nil
+            window?.delegate = nil
+            window = nil
+        }
     }
 }
 
