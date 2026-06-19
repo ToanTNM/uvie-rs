@@ -37,7 +37,6 @@ final class MemoryManager: ObservableObject {
 
     private func load() {
         guard let data = UserDefaults.standard.data(forKey: defaultsKey) else {
-            // Legacy binary blob fallback (OpenKey format)
             loadLegacy()
             return
         }
@@ -63,8 +62,6 @@ final class MemoryManager: ObservableObject {
         }
     }
 
-    /// OpenKey legacy binary format fallback.
-    /// Format: [count: UInt16LE] [bundleLen: UInt8] [bundleData] [value: UInt8] ...
     private func loadLegacy() {
         guard let legacyData = UserDefaults.standard.data(forKey: "smartSwitchKey") else { return }
         var cursor = 0

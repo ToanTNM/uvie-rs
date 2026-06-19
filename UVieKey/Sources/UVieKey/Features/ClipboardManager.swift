@@ -3,7 +3,16 @@ import AppKit
 
 @MainActor
 final class ClipboardManager: ObservableObject {
-    static let shared = ClipboardManager()
+    static let shared = {
+        // Ensure initialization on main thread
+        if Thread.isMainThread {
+            return ClipboardManager()
+        } else {
+            return DispatchQueue.main.sync {
+                ClipboardManager()
+            }
+        }
+    }()
 
     @Published private(set) var history: [String] = []
     @Published private(set) var recentlyCopiedString: String?

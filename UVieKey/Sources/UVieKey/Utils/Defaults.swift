@@ -18,4 +18,6 @@ enum DefaultsKey {
     static let clipboardSplitMinLength = "ClipboardSplitMinLength"
     static let autoDisableOnNonLatinLayout = "AutoDisableOnNonLatinLayout"
     static let keepPopoverOpen = "KeepPopoverOpen"
+    static let customCompoundApps = "CustomCompoundApps"
+    static let customChromiumApps = "CustomChromiumApps"
 }

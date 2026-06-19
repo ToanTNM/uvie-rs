@@ -1,6 +1,10 @@
 import Cocoa
 import Combine
 
+extension Notification.Name {
+    static let resetEngineAfterAppSwitch = Notification.Name("UVieKeyResetEngineAfterAppSwitch")
+}
+
 /// Manages Vietnamese/English toggle, hotkeys, and per-app state.
 final class InputMethodManager: ObservableObject {
     @Published var isVietnamese = true
@@ -56,16 +60,22 @@ final class InputMethodManager: ObservableObject {
     private func handleAppSwitch(to bundleID: String) {
         guard !bundleID.isEmpty else { return }
 
-        // Save state for previous app
+        // Step 1: Save state for previous app
         saveCurrentAppState()
 
         currentAppBundleID = bundleID
 
-        // Restore state for new app
+        // Step 2: Reset engine FIRST to clear ghost characters from previous app
+        NotificationCenter.default.post(name: .resetEngineAfterAppSwitch, object: nil)
+
+        // Step 3: THEN restore state (after engine is clean)
         if let memory, let state = memory.state(for: bundleID) {
-            isVietnamese = state.language
-            syncEngineEnabled()
-            // Code table could be applied here if needed
+            // Small delay to ensure engine reset completes before state restoration
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self] in
+                guard let self = self else { return }
+                self.isVietnamese = state.language
+                self.syncEngineEnabled()
+            }
         }
     }
 

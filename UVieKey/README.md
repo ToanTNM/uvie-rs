@@ -5,7 +5,6 @@ Bộ gõ tiếng Việt cho macOS, sử dụng engine `uvie-rs` viết bằng Ru
 ## Tính năng
 
 - **Telex & VNI**: đầy đủ hai kiểu gõ phổ biến.
-- **Quick Telex**: gõ tắt phụ âm — `cc` → `ch`, `gg` → `gi`, `kk` → `kh`, `nn` → `ng`, `pp` → `ph`, `qq` → `qu`, `tt` → `th`.
 - **Clipboard history**: lưu lịch sử copy, tự động tách đoạn theo delimiter (newline, comma, semicolon), giới hạn 1–99 entries.
 - **Đặt dấu thanh theo chuẩn mới**: `hoas` → `hoá` (tùy chọn).
 - **Tự động viết hoa đầu câu** sau `.!?` (tùy chọn).

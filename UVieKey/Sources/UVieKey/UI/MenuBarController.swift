@@ -132,8 +132,16 @@ final class MenuBarController: ObservableObject {
     }
 
     func openSettings() {
-        popover?.close()
-        SettingsWindow.shared.show()
+        // Close popover safely
+        if let popover, popover.isShown {
+            popover.close()
+        }
+
+        // Show settings on main thread
+        DispatchQueue.main.async { [weak self] in
+            guard self != nil else { return }
+            SettingsWindow.shared.show()
+        }
     }
 
     func quit() { NSApp.terminate(nil) }
@@ -345,7 +353,7 @@ struct MenuBarPopoverView: View {
         if !clipboardManager.history.isEmpty {
             VStack(spacing: 0) {
                 HStack {
-                    rowLabel("BẢNG NHẮN")
+                    rowLabel("CLIPBOARD")
                     Spacer()
                     Button {
                         clipboardManager.clearHistory()

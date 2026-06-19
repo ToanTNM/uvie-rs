@@ -3,10 +3,9 @@ import Carbon
 
 // MARK: - App Classification
 
-/// Apps that need empty-character sentinel before backspace (invalidate autocomplete).
+/// Default apps that need empty-character sentinel before backspace (invalidate autocomplete).
 /// Matched by prefix OR exact bundle ID.
-/// OpenKey uses: SendEmptyCharacter() + extra backspace for these apps.
-private let compoundApps: Set<String> = [
+private let defaultCompoundApps: Set<String> = [
     "com.apple.Safari",
     "com.apple.Notes",
     "com.apple.TextEdit",
@@ -24,6 +23,12 @@ private let compoundApps: Set<String> = [
     "org.chromium.Chromium",
 ]
 
+/// Get compound apps from UserDefaults (defaults + custom)
+private func getCompoundApps() -> Set<String> {
+    let custom = UserDefaults.standard.stringArray(forKey: DefaultsKey.customCompoundApps) ?? []
+    return Set(defaultCompoundApps).union(Set(custom))
+}
+
 /// Apps that need Accessibility text injection instead of CGEventTap.
 /// Spotlight and some secure text fields don't accept synthetic key events.
 private let axApps: Set<String> = [
@@ -38,9 +43,9 @@ private let bypassApps: Set<String> = [
     "com.apple.systemuiserver",
 ]
 
-/// Chromium browsers that need Shift+Left Arrow selection
+/// Default Chromium browsers that need Shift+Left Arrow selection
 /// instead of plain backspace (avoids duplicate chars).
-private let chromiumBrowsers: Set<String> = [
+private let defaultChromiumBrowsers: Set<String> = [
     "com.google.Chrome",
     "com.google.Chrome.canary",
     "com.brave.Browser",
@@ -54,12 +59,18 @@ private let chromiumBrowsers: Set<String> = [
     "ai.perplexity.comet",
 ]
 
+/// Get Chromium browsers from UserDefaults (defaults + custom)
+private func getChromiumBrowsers() -> Set<String> {
+    let custom = UserDefaults.standard.stringArray(forKey: DefaultsKey.customChromiumApps) ?? []
+    return Set(defaultChromiumBrowsers).union(Set(custom))
+}
+
 private func checkIsCompoundApp(_ bundleID: String) -> Bool {
-    compoundApps.contains(bundleID)
+    getCompoundApps().contains(bundleID)
 }
 
 private func checkIsChromiumBrowser(_ bundleID: String) -> Bool {
-    chromiumBrowsers.contains(bundleID)
+    getChromiumBrowsers().contains(bundleID)
 }
 
 /// Returns true for shortcuts that select text (Cmd+A, Shift+arrows, etc.).
@@ -105,7 +116,20 @@ final class EventTap: ObservableObject {
 
     /// App switch detection: prevent ghost characters from previous app
     private var previousBundleID: String = ""
-    private var appSwitchObserver: NSObjectProtocol?
+    private var engineResetObserver: NSObjectProtocol?
+
+    /// Performance logging for keystroke latency (only logs slow / high-event paths).
+    private let perfLogHandle: FileHandle? = {
+        let path = "/tmp/uviekey_perf.log"
+        if !FileManager.default.fileExists(atPath: path) {
+            FileManager.default.createFile(atPath: path, contents: nil, attributes: nil)
+        }
+        guard let handle = FileHandle(forWritingAtPath: path) else { return nil }
+        handle.seekToEndOfFile()
+        return handle
+    }()
+    private var perfEventCount = 0
+    private var perfStartTime: CFAbsoluteTime = 0
 
     init(inputMethodManager: InputMethodManager) {
         self.inputMethodManager = inputMethodManager
@@ -113,7 +137,7 @@ final class EventTap: ObservableObject {
         eventSource = CGEventSource(stateID: .privateState)
         applyEngineSettings()
         observeSettingsChanges()
-        observeAppSwitch()
+        observeEngineResetNotification()
     }
 
     deinit {
@@ -122,8 +146,8 @@ final class EventTap: ObservableObject {
         if let defaultsObserver {
             NotificationCenter.default.removeObserver(defaultsObserver)
         }
-        if let appSwitchObserver {
-            NotificationCenter.default.removeObserver(appSwitchObserver)
+        if let engineResetObserver {
+            NotificationCenter.default.removeObserver(engineResetObserver)
         }
     }
 
@@ -193,6 +217,37 @@ final class EventTap: ObservableObject {
     private func getCurrentText() -> String {
         return _engine.currentOutput()
     }
+
+    // MARK: - Performance Logging
+
+    private func perfBegin() {
+        perfStartTime = CFAbsoluteTimeGetCurrent()
+        perfEventCount = 0
+    }
+
+    private func perfNoteEvent(_ count: Int = 1) {
+        perfEventCount += count
+    }
+
+    private func perfEnd(_ label: String, keyCode: Int64, app: String) {
+        let elapsedMs = (CFAbsoluteTimeGetCurrent() - perfStartTime) * 1000
+        // Log anything that takes >5ms or posts >4 synthetic events (normal path is 1 event).
+        guard elapsedMs > 5.0 || perfEventCount > 4 else { return }
+        let line = String(
+            format: "[%.3f ms] %@ keyCode=%lld events=%d app=%@",
+            elapsedMs, label, keyCode, perfEventCount, app
+        )
+        perfLog(line)
+    }
+
+    private func perfLog(_ message: String) {
+        guard let handle = perfLogHandle else { return }
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = "\(timestamp) \(message)\n"
+        if let data = line.data(using: .utf8) {
+            try? handle.write(contentsOf: data)
+        }
+    }
     
     // MARK: - Settings
 
@@ -217,21 +272,17 @@ final class EventTap: ObservableObject {
         }
     }
 
-    private func observeAppSwitch() {
-        appSwitchObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification,
+    private func observeEngineResetNotification() {
+        engineResetObserver = NotificationCenter.default.addObserver(
+            forName: .resetEngineAfterAppSwitch,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             guard let self = self else { return }
-            let currentBundleID = self.appDetector.bundleID
-            if currentBundleID != self.previousBundleID {
-                self.previousBundleID = currentBundleID
-                // Reset engine to clear any stuck state from previous app
-                self._engine.reset()
-                // Reset auto-capitalize state for new app context
-                self.isAtSentenceStart = true
-            }
+            // Reset engine to clear ghost characters from previous app
+            self._engine.reset()
+            // Reset auto-capitalize state for new app context
+            self.isAtSentenceStart = true
         }
     }
 
@@ -284,7 +335,7 @@ final class EventTap: ObservableObject {
 
         // Mouse down/drag starts a new editing session (selection, click, etc.).
         // Reset the engine so stale composing state cannot be applied after the
-        // user selects text with the mouse. Modeled after OpenKey.
+        // user selects text with the mouse.
         if type == .leftMouseDown || type == .rightMouseDown ||
            type == .leftMouseDragged || type == .rightMouseDragged {
             _engine.reset()
@@ -298,6 +349,8 @@ final class EventTap: ObservableObject {
 
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         let flags = event.flags
+        let app = appDetector.bundleID
+        perfBegin()
 
         // DEBUG: Trace ghost character issue
         if type == .keyDown {
@@ -355,6 +408,7 @@ final class EventTap: ObservableObject {
         if keyCode == 51 {
             // Always pass keyUp through so the OS sees the full key cycle
             if type == .keyUp {
+                perfEnd("backspace-keyup", keyCode: keyCode, app: app)
                 return Unmanaged.passRetained(event)
             }
 
@@ -367,6 +421,7 @@ final class EventTap: ObservableObject {
                     _engine.reset()
                 }
                 // Pass through to let OS handle the word deletion
+                perfEnd("backspace-option", keyCode: keyCode, app: app)
                 return Unmanaged.passRetained(event)
             }
 
@@ -379,6 +434,7 @@ final class EventTap: ObservableObject {
             #endif
             if bs == 0 && out.isEmpty && !_engine.isComposing {
                 // Not composing - let OS handle it
+                perfEnd("backspace-os", keyCode: keyCode, app: app)
                 return Unmanaged.passRetained(event)
             }
             // Debug: log if engine is composing but backspace returned empty (shouldn't happen)
@@ -390,7 +446,7 @@ final class EventTap: ObservableObject {
                 if isCompoundApp {
                     // Step 1: invalidate autocomplete dropdown with empty char
                     sendEmptyCharacter()
-                    // Step 2: OpenKey adds +1 backspace for compound apps
+                    // Step 2: Add +1 backspace for compound apps
                     let adjustedBs = bs + 1
                     if isChromium {
                         // Chromium: Shift+Left select then overwrite
@@ -404,12 +460,14 @@ final class EventTap: ObservableObject {
                 }
             }
             postText(out)
+            perfEnd("backspace", keyCode: keyCode, app: app)
             return nil
         }
 
         // --- Space ---
         if keyCode == 49 {
             if type == .keyUp {
+                perfEnd("space-keyup", keyCode: keyCode, app: app)
                 return Unmanaged.passRetained(event)
             }
             if type == .keyDown {
@@ -447,6 +505,7 @@ final class EventTap: ObservableObject {
                         // Insert the expansion
                         postText(expansion)
                         _engine.reset()
+                        perfEnd("space-macro", keyCode: keyCode, app: app)
                         return nil  // Consume the space event
                     }
                 }
@@ -471,12 +530,14 @@ final class EventTap: ObservableObject {
                 // Note: Space after .!? doesn't make it a new sentence start yet
                 // The actual .!? character will set isAtSentenceStart when typed
             }
+            perfEnd("space", keyCode: keyCode, app: app)
             return Unmanaged.passRetained(event)
         }
 
         // --- Break keys (Enter, Tab, Arrows, etc.) ---
         if isBreakKey(keyCode) {
             if type == .keyUp {
+                perfEnd("break-keyup", keyCode: keyCode, app: app)
                 return Unmanaged.passRetained(event)
             }
             if type == .keyDown {
@@ -517,6 +578,7 @@ final class EventTap: ObservableObject {
                         // Enter/Return after macro expansion starts new sentence
                         updateSentenceStartStateForBreakKey(keyCode)
 
+                        perfEnd("break-macro", keyCode: keyCode, app: app)
                         return nil  // Consume the break key event
                     }
                 }
@@ -540,15 +602,18 @@ final class EventTap: ObservableObject {
                 // Enter/Return starts a new sentence
                 updateSentenceStartStateForBreakKey(keyCode)
             }
+            perfEnd("break", keyCode: keyCode, app: app)
             return Unmanaged.passRetained(event)
         }
 
         // --- Regular character keys ---
         if type == .keyUp {
+            perfEnd("char-keyup", keyCode: keyCode, app: app)
             return nil  // Suppress original keyUp; we already sent synthetic
         }
 
         guard let firstChar = characterFromCGEvent(event) else {
+            perfEnd("char-pass", keyCode: keyCode, app: app)
             return Unmanaged.passRetained(event)
         }
 
@@ -579,6 +644,7 @@ final class EventTap: ObservableObject {
             }
         }
         postText(out)
+        perfEnd("char", keyCode: keyCode, app: app)
         return nil
     }
 
@@ -690,6 +756,7 @@ final class EventTap: ObservableObject {
     /// Standard backspaces.
     private func applyBackspaces(_ count: Int) {
         guard let eventSource, count > 0 else { return }
+        perfNoteEvent(2 * count)
         for _ in 0..<count {
             let down = CGEvent(keyboardEventSource: eventSource, virtualKey: 51, keyDown: true)
             down?.setIntegerValueField(.eventSourceStateID, value: syntheticTag)
@@ -703,6 +770,7 @@ final class EventTap: ObservableObject {
     /// Chromium fix: Shift+Left Arrow to select, then type overwrites.
     private func applySelectionBackspaces(_ count: Int) {
         guard let eventSource, count > 0 else { return }
+        perfNoteEvent(2 * count)
         for _ in 0..<count {
             let down = CGEvent(keyboardEventSource: eventSource, virtualKey: 123, keyDown: true)
             down?.flags = .maskShift
@@ -718,6 +786,7 @@ final class EventTap: ObservableObject {
     /// Send U+202F (Narrow No-Break Space) to invalidate autocomplete dropdown.
     private func sendEmptyCharacter() {
         guard let eventSource else { return }
+        perfNoteEvent(2)
         let emptyChar: UniChar = 0x202F
         let down = CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: true)
         down?.setIntegerValueField(.eventSourceStateID, value: syntheticTag)
@@ -730,6 +799,7 @@ final class EventTap: ObservableObject {
 
     private func postText(_ string: String) {
         guard let eventSource, !string.isEmpty else { return }
+        perfNoteEvent(2)
         let utf16 = Array(string.utf16)
         guard !utf16.isEmpty else { return }
         let down = CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: true)

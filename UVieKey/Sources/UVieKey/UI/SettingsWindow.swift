@@ -8,6 +8,14 @@ final class SettingsWindow {
     private var window: NSWindow?
 
     func show() {
+        // Ensure we're on main thread
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.show()
+            }
+            return
+        }
+
         if window == nil {
             let w = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 660, height: 500),
@@ -18,10 +26,15 @@ final class SettingsWindow {
             w.title = "UVieKey"
             w.titlebarAppearsTransparent = true
             w.isMovableByWindowBackground = true
-            w.contentView = NSHostingView(rootView: SettingsView())
+
+            // Wrap SwiftUI view in hosting controller
+            let hostingView = NSHostingView(rootView: SettingsView())
+            w.contentView = hostingView
+
             w.center()
             window = w
         }
+
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -34,6 +47,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case keyboard   = "Bàn phím"
     case macro      = "Macro"
     case clipboard  = "Clipboard"
+    case apps       = "Ứng dụng"
     case advanced   = "Nâng cao"
     case about      = "Giới thiệu"
 
@@ -45,6 +59,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .keyboard:  return "keyboard"
         case .macro:     return "doc.text.magnifyingglass"
         case .clipboard: return "doc.on.clipboard"
+        case .apps:      return "wrench.and.screwdriver"
         case .advanced:  return "gearshape.2"
         case .about:     return "info.circle"
         }
@@ -78,6 +93,7 @@ struct SettingsView: View {
                 case .keyboard:  KeyboardPane()
                 case .macro:     MacroPane()
                 case .clipboard: ClipboardPane()
+                case .apps:      AppsPane()
                 case .advanced:  AdvancedPane()
                 case .about:     AboutPane()
                 }
@@ -258,7 +274,7 @@ struct ClipboardPane: View {
             PaneSection("Cài đặt") {
                 SettingsCard {
                     SToggleRow("doc.on.clipboard",
-                                "Ghi lại lịch sử bảng nhắn",
+                                "Ghi lại lịch sử copy",
                                 "Lưu các nội dung đã sao chép để sử dụng lại nhanh chóng",
                                 $clipboardHistoryEnabled)
                 }
@@ -633,9 +649,9 @@ struct AdvancedPane: View {
                             .foregroundStyle(.secondary)
                             .frame(width: 24)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Sửa lỗi Chrome / Safari")
+                            Text("Sửa lỗi Chromium / Safari")
                                 .font(.system(size: 13, weight: .medium))
-                            Text("Khắc phục vấn đề autocomplete khi gõ trong trình duyệt")
+                            Text("Khắc phục các vấn đề khi gõ trong trình duyệt, thêm app ở tab Ứng Dụng")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }
