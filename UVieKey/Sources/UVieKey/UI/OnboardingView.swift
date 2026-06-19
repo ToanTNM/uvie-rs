@@ -110,7 +110,7 @@ private struct WelcomeStep: View {
     var body: some View {
         VStack(spacing: 28) {
             // App icon
-            Image("AppIcon")
+            Image(nsImage: appIconImage())
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 100, height: 100)
@@ -150,6 +150,26 @@ private struct WelcomeStep: View {
         .padding(.vertical, 7)
         .background(color.opacity(0.08), in: Capsule())
     }
+
+    private func appIconImage() -> NSImage {
+        // 1) Try the app bundle's icon (used in packaged .app builds)
+        if let bundleIcon = NSImage(named: "AppIcon") {
+            return bundleIcon
+        }
+        // 2) Fall back to the source repo path (used during `swift build` / Xcode run)
+        let sourceFile = URL(fileURLWithPath: #file)
+        let repoIcon = sourceFile
+            .deletingLastPathComponent() // UI
+            .deletingLastPathComponent() // UVieKey
+            .deletingLastPathComponent() // Sources
+            .deletingLastPathComponent() // UVieKey
+            .appendingPathComponent("AppIcon.icns")
+        if let repoIconImage = NSImage(contentsOf: repoIcon) {
+            return repoIconImage
+        }
+        // 3) Last resort blank image
+        return NSImage(size: NSSize(width: 100, height: 100))
+    }
 }
 
 // MARK: - Step 1: Permission
@@ -173,7 +193,7 @@ private struct PermissionStep: View {
             VStack(spacing: 12) {
                 Text("Quyền Trợ năng")
                     .font(.system(size: 26, weight: .bold))
-                Text("UVieKey cần quyền Accessibility để\nbắt và xử lý phím gõ trên toàn hệ thống.")
+                Text("UVieKey cần quyền Accessibility để bắt và xử lý phím gõ.")
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -248,7 +268,7 @@ private struct ReadyStep: View {
             VStack(spacing: 12) {
                 Text("Tất cả đã sẵn sàng!")
                     .font(.system(size: 28, weight: .bold))
-                Text("UVieKey đã được thiết lập xong.\nBấm ⌘Space để bắt đầu gõ Tiếng Việt ngay.")
+                Text("UVieKey đã được thiết lập xong.")
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -257,9 +277,9 @@ private struct ReadyStep: View {
 
             // Quick tips
             VStack(alignment: .leading, spacing: 10) {
-                tipRow("keyboard",              "Nhấn vào icon V/E trên thanh menu để chuyển ngôn ngữ")
+                tipRow("keyboard",              "Nhấn vào icon V/E trên thanh menu hoac Fn để chuyển ngôn ngữ")
                 tipRow("gearshape",             "Mở Cài đặt để tuỳ chỉnh bảng mã và tính năng")
-                tipRow("arrow.triangle.2.circlepath", "Smart Switch tự động nhớ ngôn ngữ cho từng app")
+                tipRow("arrow.triangle.2.circlepath", "Mode Memory tự động nhớ ngôn ngữ cho từng app")
             }
             .padding(16)
             .background(Color(nsColor: .controlBackgroundColor),
