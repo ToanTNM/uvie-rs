@@ -21,7 +21,7 @@ pub struct UltraFastViEngine {
     pub(crate) out_buf: OutBuffer,
     /// Accumulated committed text (prior complete words + boundary chars).
     pub(crate) committed: OutBuffer,
-    /// Input method — determines classifier and tone tables.
+    /// Input method - determines classifier and tone tables.
     pub(crate) input_method: InputMethod,
     pub(crate) mode: &'static Mode,
     /// Engine configuration flags.

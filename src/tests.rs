@@ -463,7 +463,7 @@ fn edge_double_tone_various_positions() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "bass"), "bas");
 
-    // Double tone in middle then more chars — cancelled tone key becomes literal, extra chars accepted
+    // Double tone in middle then more chars - cancelled tone key becomes literal, extra chars accepted
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "tesstt"), "testt");
 
@@ -595,7 +595,7 @@ fn free_style_modifier_bubbling() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "neues"), "nếu");
 
-    // aa modifier with vowel in between: naos -> nâó? No — naos: n,a,o -> nao + tone s
+    // aa modifier with vowel in between: naos -> nâó? No - naos: n,a,o -> nao + tone s
     // Actually: nao with free-style aa: naoas -> n,a,o,a -> bubble a next to a -> n,a,a,o -> nâo + s -> nấo
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "naoas"), "nấo");
@@ -840,14 +840,14 @@ fn quick_telex_disabled_by_default() {
 
 #[test]
 fn modern_orthography_hoas() {
-    // hoas -> hoá (tone on 'a' — uvie-rs default is already modern orthography)
+    // hoas -> hoá (tone on 'a' - uvie-rs default is already modern orthography)
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "hoas"), "hoá");
 }
 
 #[test]
 fn modern_orthography_thuys() {
-    // thuys -> thuý (tone on 'y' — uvie-rs default is already modern orthography)
+    // thuys -> thuý (tone on 'y' - uvie-rs default is already modern orthography)
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "thuys"), "thuý");
 }
@@ -886,7 +886,7 @@ fn diff_compact_no_crash() {
     // Safety valve must prevent raw_chars from overflowing (capacity = 24).
     let mut e = UltraFastViEngine::new();
 
-    // Feed 'n' then 40 'e' keys — without safety-valve this would crash.
+    // Feed 'n' then 40 'e' keys - without safety-valve this would crash.
     e.feed_diff('n');
     for _ in 0..40 {
         e.feed_diff('e');
@@ -1324,7 +1324,7 @@ fn debug_timff() {
 
 #[test]
 fn debug_phat_sequences() {
-    // "phat" -> should be "phát"? No — "phat" has no tone key.
+    // "phat" -> should be "phát"? No - "phat" has no tone key.
     // "phas" -> "phás" (s=sắc), "phat" -> "phất"? No, t is coda not tone.
     // "phast" = ph+a+s(tone)+t(coda) -> "phást"
     let cases = [
@@ -1636,6 +1636,43 @@ fn feed_diff_backspace() {
     assert_eq!(screen, "to");
 }
 
+#[test]
+fn repro_ghost_character_log() {
+    let mut e = UltraFastViEngine::new();
+    let mut screen = String::new();
+    // Simulate user sequence: pass <backspace> <backspace> a s s a ...
+    for ch in "pass".chars() {
+        let (bs, suffix) = e.feed_diff(ch);
+        let suffix = suffix.to_string();
+        let committed = e.committed_text_diff().to_string();
+        let core_out = e.current_output();
+        let sc: Vec<char> = screen.chars().collect();
+        screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+        screen.push_str(&suffix);
+        println!("feed '{}' -> bs={} suffix='{}' screen='{}' diff_committed='{}' core_out='{}'", ch, bs, suffix, screen, committed, core_out);
+    }
+    for _ in 0..2 {
+        let (bs, suffix) = e.backspace_diff();
+        let suffix = suffix.to_string();
+        let committed = e.committed_text_diff().to_string();
+        let core_out = e.current_output();
+        let sc: Vec<char> = screen.chars().collect();
+        screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+        screen.push_str(&suffix);
+        println!("backspace -> bs={} suffix='{}' screen='{}' diff_committed='{}' core_out='{}'", bs, suffix, screen, committed, core_out);
+    }
+    for ch in "assa".chars() {
+        let (bs, suffix) = e.feed_diff(ch);
+        let suffix = suffix.to_string();
+        let committed = e.committed_text_diff().to_string();
+        let core_out = e.current_output();
+        let sc: Vec<char> = screen.chars().collect();
+        screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+        screen.push_str(&suffix);
+        println!("feed '{}' -> bs={} suffix='{}' screen='{}' diff_committed='{}' core_out='{}'", ch, bs, suffix, screen, committed, core_out);
+    }
+}
+
 // ===== Typed Syllable Slots Tests =====
 
 #[test]
@@ -1670,7 +1707,7 @@ fn syl_structure_diphthong_nucleus() {
     // "to" then "o" → "tô" (circumflex), still single nucleus slot
     type_seq(&mut e, "too");
     assert_eq!(e.syl_structure().onset_kind, OnsetKind::Single(b't'));
-    // The engine's partition sees [t, o, o_modifier] — the second 'o' triggers
+    // The engine's partition sees [t, o, o_modifier] - the second 'o' triggers
     // circumflex, keeping nucleus as 1 slot. Actually the buf may have 2 entries
     // for 'o' and 'o' but the second one becomes a modifier... Let's just check
     // the raw partition result:

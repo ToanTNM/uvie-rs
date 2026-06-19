@@ -28,7 +28,7 @@ final class AXTextInjector {
         // Check if engine processed the character (even if output is empty for literal chars)
         // If engine is composing or produced output, we should inject
         guard engine.isComposing || bs > 0 || !out.isEmpty else {
-            // Engine didn't process and we're not composing — let OS handle it
+            // Engine didn't process and we're not composing - let OS handle it
             return false
         }
 
@@ -50,7 +50,7 @@ final class AXTextInjector {
         let (bs, out) = engine.backspace()
         // Inject if: we have backspaces, we have output, or engine is still composing
         guard engine.isComposing || bs > 0 || !out.isEmpty else {
-            // Nothing to do — let OS handle backspace
+            // Nothing to do - let OS handle backspace
             return false
         }
 

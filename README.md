@@ -1,134 +1,112 @@
-# uvie
+# UVieKey
 
-A really fast Vietnamese input method engine in Rust.
+Bộ gõ tiếng Việt cho macOS, với core engine `uvie-rs` viết bằng Rust.
 
-## Why it is "ultra fast"
+## Tính năng
 
-Benchmarks (`cargo bench`) usually put `uvie` in the **ns → low µs** range per sequence.
+- **Telex & VNI**: đầy đủ hai kiểu gõ phổ biến.
+- **Clipboard history**: lưu lịch sử copy, tự động tách đoạn theo delimiter (newline, comma, semicolon), giới hạn 1–99 entries.
+- **Đặt dấu thanh theo chuẩn mới**: `hoas` → `hoá` (tùy chọn).
+- **Tự động viết hoa đầu câu** sau `.!?` (tùy chọn).
+- **Nhớ ngôn ngữ theo app**: tự động bật/tắt tiếng Việt cho từng ứng dụng.
+- **Tự động tắt** khi detect bàn phím không Latin (Nhật, Hàn, Trung, Nga...).
+- **Macro**: gõ tắt, ví dụ `mk` → `mình không`.
+- **Fn tap toggle**: nhấn nhanh `Fn` để chuyển Anh/Việt.
+- **AX mode**: hoạt động trong Spotlight và secure text fields.
+- **Không Dock icon**: chỉ hiện trên menu bar.
+- **Tối ưu performance**: sử dụng Rust engine để xử lý nhanh, ổn định và chính xác.
+- **Always on top**: cho phép bật/tắt chế độ luôn hiển thị trên các ứng dụng khác khi copy.
 
-### Why it’s fast:
+## Yêu cầu hệ thống
 
-- Minimal allocation (fixed small buffers; optional `heapless` mode)
-- Single-pass transforms (no extra scans / passes)
-- Small fixed-capacity buffers (cache-friendly, predictable)
-- CPU-friendly control flow: reduce unpredictable branches to lower branch-misprediction stalls
-- Branch-reduction techniques: table lookups, bitmasks, and “branchless” selection patterns instead of large `match/if` ladders
-- O(1) query-time operations for the core lookup/transform steps
-- Optimized for tight loops.
+- macOS 13 Ventura trở lên
+- Apple Silicon hoặc Intel (universal binary)
 
-## Features
+## Cài đặt
 
-- Supports **Telex** and **VNI** input methods.
-- **Easy to use**: simple API, no dependencies, easy to embed, extensible.
-- **Default (`std`)**: normal Rust `String` buffers.
-- **`heapless`**: uses fixed-capacity `heapless::String` buffers (no heap allocation from the engine itself).
-- Can be built in a heapless-friendly configuration for embedded devices, low-resources environments.
-  
-> Note: in `heapless` mode, if internal buffers overflow, output may be truncated.
+1. Tải `UVieKey-*.dmg` tương ứng với CPU architecture của bạn từ [Releases](https://github.com/thuupx/uvie-rs/releases).
+2. Kéo `UVieKey.app` vào thư mục `Applications`.
+3. Mở app, cấp quyền **Accessibility** trong **System Settings → Privacy & Security → Accessibility**.
+4. Icon `uvie` sẽ xuất hiện trên menu bar.
 
-## How to use
+> Nếu macOS chặn vì Gatekeeper: vào **System Settings → Privacy & Security** và chọn **Open Anyway**.
 
-Add it to your project:
+## Cách dùng
 
-```toml
-[dependencies]
-uvie = { path = "../uvie" }
-```
+- **Chuyển tiếng Việt**: click icon menu bar hoặc nhấn `Fn`.
+- **Chọn kiểu gõ**: Telex / VNI trong Preferences.
+- **Tạm dừng / thoát**: click icon menu bar.
 
-Telex:
+## Build từ source
 
-```rust
-use uvie::{InputMethod, UltraFastViEngine};
-
-let mut e = UltraFastViEngine::new();
-e.set_input_method(InputMethod::Telex);
-
-for ch in "phoos".chars() {
-    e.feed(ch);
-}
-assert_eq!(e.feed(' '), "phố ");
-```
-
-VNI:
-
-```rust
-use uvie::{InputMethod, UltraFastViEngine};
-
-let mut e = UltraFastViEngine::new();
-e.set_input_method(InputMethod::Vni);
-
-for ch in "viet65".chars() {
-    e.feed(ch);
-}
-assert_eq!(e.feed(' '), "việt ");
-```
-
-Embedded/heapless check:
+Requirements: Rust toolchain, Swift 5.9+, macOS SDK.
 
 ```bash
-cargo check --no-default-features --features heapless
+# Build static lib + Swift app
+./UVieKey/build.sh
+
+# Chạy
+./UVieKey/.build/debug/UVieKey
 ```
 
-## CLI demo
-
-The repository contains a small interactive CLI (enabled only with `std`).
+Build release + package:
 
 ```bash
-cargo run -- --mode telex
-cargo run -- --mode vni
+cd UVieKey
+swift build --configuration release --arch arm64
+swift build --configuration release --arch x86_64
+lipo -create .build/arm64-apple-macosx/release/UVieKey .build/x86_64-apple-macosx/release/UVieKey -output .build/release/UVieKey
+
+# Bundle .app
+APP="UVieKey.app"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp Info.plist "$APP/Contents/Info.plist"
+cp .build/release/UVieKey "$APP/Contents/MacOS/UVieKey"
+chmod +x "$APP/Contents/MacOS/UVieKey"
+cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 ```
 
-Controls:
+## Release CI
 
-- Press `Enter` to flush
-- Press `Ctrl+C` to exit
+Workflow `.github/workflows/release.yml` tự động build universal binary, sign, notarize, tạo DMG, và draft release.
 
-## Benchmarks (uvie vs vi)
+Secrets cần thiết:
 
-Benchmarks use `criterion`.
+| Secret | Mô tả |
+| -------- | ------- |
+| `CERTIFICATE_P12_BASE64` | Developer ID Application certificate (base64) |
+| `CERTIFICATE_PASSWORD` | Password file `.p12` |
+| `KEYCHAIN_PASSWORD` | Password keychain tạm trong CI |
+| `SIGNING_IDENTITY` | `Developer ID Application: Name (Team ID)` |
+| `APPLE_ID` | Apple ID email |
+| `APPLE_TEAM_ID` | Team ID 10 ký tự |
+| `APPLE_APP_PASSWORD` | App-specific password từ appleid.apple.com |
 
-```bash
-cargo bench
-```
+## Engine `uvie-rs`
 
-`cargo bench` runs benchmarks in the `bench` profile (release target).
+Rust library, `no_std`/`no-alloc` compatible, zero deps.
 
-The benchmark file is in `benches/perf.rs` and currently benchmarks:
+- Per-char state buffer (incremental, không replay)
+- Validate raw keystrokes trước khi transform
+- Diff output: `(backspaces, suffix)` cho mỗi phím
+- Fixed stack buffers, không heap allocation trong hot path
 
-- `uvie_telex`
-- `uvie_vni`
+Xem chi tiết kiến trúc trong [`src/ARCHITECT.md`](src/ARCHITECT.md).
 
-It also includes direct comparisons against the [`vi`](https://docs.rs/vi/latest/vi/) crate:
+## Benchmark
 
-- `compare_telex/*`
-- `compare_vni/*`
-
-### Fairness notes
-
-- `uvie` is benchmarked by reusing a single `UltraFastViEngine` instance per benchmark and calling `clear()` between iterations.
-- `vi` is benchmarked via `vi::methods::transform_buffer`, reusing a single `String` output buffer per benchmark iteration.
-
-### Results
-
-The exact numbers depend on CPU/OS, but the ratio is stable.
-
-Sample run (Apple Silicon, `cargo bench`):
+Apple Silicon (`cargo bench`):
 
 | Case | Telex speedup (vi / uvie) | VNI speedup (vi / uvie) |
-| --- | ---: | ---: |
-| simple | ~16x | ~18x |
-| sentence | ~15x | ~14x |
-| mixed | ~17x | ~11x |
-| uow / uow_like | ~15x | n/a |
-| cluster | ~15x | ~15x |
-| ui | ~22x | ~11x |
+| ------ | --------------------------: | ------------------------: |
+| simple | ~5.8x | ~5.7x |
+| sentence | ~6.1x | ~5.3x |
+| mixed | ~15.8x | ~10.7x |
+| cluster | ~6.7x | ~6.7x |
+| ui | ~5.8x | ~2.8x |
 
-See more details at [online report](https://thuupx.github.io/uvie-rs/criterion/report/)
+Report đầy đủ: [thuupx.github.io/uvie-rs/criterion/report/](https://thuupx.github.io/uvie-rs/criterion/report/)
 
-## Embedded / heapless build
+## License
 
-To build the library without default `std` and with heapless buffers:
-
-```bash
-cargo check --no-default-features --features heapless
-```
+MIT OR Apache-2.0

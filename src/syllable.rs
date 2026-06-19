@@ -18,16 +18,16 @@ use crate::tone::map_vowel_with_tone;
 // Flag constants
 // ---------------------------------------------------------------------------
 
-/// `â ê ô` — double-vowel circumflex (telex: aa/ee/oo, VNI: 6).
+/// `â ê ô` - double-vowel circumflex (telex: aa/ee/oo, VNI: 6).
 pub const F_CIRCUMFLEX: u8 = 1 << 0;
 
-/// `ă ơ ư` — breve/horn modifier (telex: aw/ow/uw, VNI: 7/8).
+/// `ă ơ ư` - breve/horn modifier (telex: aw/ow/uw, VNI: 7/8).
 pub const F_HORN: u8 = 1 << 1;
 
 /// The physical key was uppercase (shift held).
 pub const F_CAPS: u8 = 1 << 2;
 
-/// This entry must be emitted verbatim — no further transforms allowed.
+/// This entry must be emitted verbatim - no further transforms allowed.
 /// Set when a triple-cancel fires or the word becomes an English passthrough.
 pub const F_LITERAL: u8 = 1 << 3;
 
@@ -63,7 +63,7 @@ pub struct Syl {
 impl Syl {
     /// Construct a new literal entry (no modifier, no tone).
     ///
-    /// **Note**: `literal` also sets no F_LITERAL flag — the name refers to the
+    /// **Note**: `literal` also sets no F_LITERAL flag - the name refers to the
     /// fact that no Vietnamese transform has been applied yet. F_LITERAL is set
     /// by the engine when the word is forced into raw passthrough (triple-cancel).
     #[inline]
@@ -249,7 +249,7 @@ pub const MAX_WORD_LEN: usize = 24;
 
 /// A fixed-capacity buffer of [`Syl`] entries for the current composing word.
 ///
-/// Uses a plain array + length counter — zero heap, `no_std`-compatible.
+/// Uses a plain array + length counter - zero heap, `no_std`-compatible.
 #[derive(Clone)]
 pub struct SylBuf {
     entries: [Syl; MAX_WORD_LEN],
@@ -323,7 +323,7 @@ impl SylBuf {
     }
 
     /// Get entry by index (panics on out-of-bounds in debug, UB in release via
-    /// `get_unchecked` — callers are responsible for bounds checks).
+    /// `get_unchecked` - callers are responsible for bounds checks).
     #[inline]
     pub fn get(&self, i: usize) -> &Syl {
         &self.entries[i]
@@ -348,7 +348,7 @@ impl Default for SylBuf {
 }
 
 // ---------------------------------------------------------------------------
-// Typed Syllable Slots — incremental structure tracking
+// Typed Syllable Slots - incremental structure tracking
 // ---------------------------------------------------------------------------
 
 /// Classification of onset consonant patterns.

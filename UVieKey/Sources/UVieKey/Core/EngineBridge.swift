@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - C FFI (UvieEngine — diff-based API)
+// MARK: - C FFI (UvieEngine - diff-based API)
 
 @_silgen_name("uvie_engine_new")
 func uvie_engine_new() -> OpaquePointer?
@@ -34,6 +34,9 @@ func uvie_engine_committed_text(_ engine: OpaquePointer?, _ out_buf: UnsafeMutab
 
 @_silgen_name("uvie_engine_current_output")
 func uvie_engine_current_output(_ engine: OpaquePointer?, _ out_buf: UnsafeMutablePointer<CChar>?, _ out_len: Int) -> Int
+
+@_silgen_name("uvie_engine_raw_chars")
+func uvie_engine_raw_chars(_ engine: OpaquePointer?, _ out_buf: UnsafeMutablePointer<CChar>?, _ out_len: Int) -> Int
 
 /// Diff-based Vietnamese input engine wrapper.
 /// Returns (backspace_count, new_output) from Rust on each keystroke.
@@ -112,6 +115,13 @@ final class EngineBridge {
         guard let engine else { return "" }
         var buf = [CChar](repeating: 0, count: 128)
         _ = uvie_engine_current_output(engine, &buf, buf.count)
+        return String(cString: buf)
+    }
+
+    func rawChars() -> String {
+        guard let engine else { return "" }
+        var buf = [CChar](repeating: 0, count: 128)
+        _ = uvie_engine_raw_chars(engine, &buf, buf.count)
         return String(cString: buf)
     }
 }

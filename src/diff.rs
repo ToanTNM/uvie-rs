@@ -18,6 +18,8 @@ pub struct DiffState {
     pub prev_inner_render: OutBuffer,
     /// Raw char count at the last valid (non-passthrough) Vietnamese render.
     pub last_valid_raw_len: usize,
+    /// Coda start index at the last valid Vietnamese render (used to avoid optimistic display when the syllable already has a coda).
+    pub last_valid_coda_start: usize,
     /// Output at the last valid Vietnamese render, used for V-C-V split.
     pub last_valid_out: OutBuffer,
     /// Accumulated auto-committed text from V-C-V splits (diff mode only).
@@ -39,6 +41,7 @@ impl DiffState {
             prev_rendered: new_out_buffer(),
             prev_inner_render: new_out_buffer(),
             last_valid_raw_len: 0,
+            last_valid_coda_start: 0,
             last_valid_out: new_out_buffer(),
             diff_committed: new_out_buffer(),
             diff_suffix: new_out_buffer(),
@@ -50,6 +53,7 @@ impl DiffState {
         self.prev_rendered.clear();
         self.prev_inner_render.clear();
         self.last_valid_raw_len = 0;
+        self.last_valid_coda_start = 0;
         self.last_valid_out.clear();
         self.diff_committed.clear();
         self.diff_suffix.clear();
@@ -81,7 +85,7 @@ impl Diffable for UltraFastViEngine {
             return (0, &self.diff.diff_suffix);
         }
 
-        // Safety valve: buffer full — commit, start fresh.
+        // Safety valve: buffer full - commit, start fresh.
         if self.diff.raw_chars.is_full() {
             self.render_out_buf();
             let _ = self.diff.diff_committed.push_str(&self.out_buf);
@@ -92,6 +96,7 @@ impl Diffable for UltraFastViEngine {
             self.diff.raw_chars.clear();
             self.diff.prev_inner_render.clear();
             self.diff.last_valid_raw_len = 0;
+            self.diff.last_valid_coda_start = 0;
             self.diff.last_valid_out.clear();
             let _ = self.diff.raw_chars.try_push(ch);
             self.feed(ch);
@@ -122,6 +127,7 @@ impl Diffable for UltraFastViEngine {
                 self.raw_len = self.diff.raw_chars.len();
             }
             self.diff.last_valid_raw_len = 0;
+            self.diff.last_valid_coda_start = 0;
             self.diff.last_valid_out.clear();
         }
 
@@ -130,21 +136,25 @@ impl Diffable for UltraFastViEngine {
 
         if !is_now_raw {
             self.diff.last_valid_raw_len = self.diff.raw_chars.len();
+            self.diff.last_valid_coda_start = Self::raw_coda_start(&self.diff.raw_chars);
             self.diff.last_valid_out.clear();
             let _ = self.diff.last_valid_out.push_str(&new_composed);
         }
 
         // Optimistic display: show coda consonant appended to valid Vietnamese.
+        // Only use it when the valid Vietnamese syllable had no coda yet;
+        // otherwise the screen and the engine's true state diverge, causing ghost characters.
         let ch_is_tone = Self::is_tone_key_in_mode(ch, self.mode);
+        let mut optimistic_candidate = self.diff.last_valid_out.clone();
+        let _ = optimistic_candidate.push(ch);
         let is_optimistic = is_now_raw
             && !self.diff.last_valid_out.is_empty()
             && !ch_is_tone
-            && Self::is_single_consonant_appended_slice(&self.diff.raw_chars, self.diff.last_valid_raw_len);
+            && Self::is_single_consonant_appended_slice(&self.diff.raw_chars, self.diff.last_valid_raw_len)
+            && self.diff.last_valid_coda_start == self.diff.last_valid_raw_len;
 
         let display_composed = if is_optimistic {
-            let mut d = self.diff.last_valid_out.clone();
-            let _ = d.push(ch);
-            d
+            optimistic_candidate
         } else {
             new_composed.clone()
         };
@@ -201,9 +211,11 @@ impl Diffable for UltraFastViEngine {
                 let is_new_raw = Self::is_raw_passthrough_slice(&self.diff.raw_chars, &new_composed2);
                 if is_new_raw {
                     self.diff.last_valid_raw_len = 0;
+                    self.diff.last_valid_coda_start = 0;
                     self.diff.last_valid_out.clear();
                 } else {
                     self.diff.last_valid_raw_len = self.diff.raw_chars.len();
+                    self.diff.last_valid_coda_start = Self::raw_coda_start(&self.diff.raw_chars);
                     self.diff.last_valid_out.clear();
                     let _ = self.diff.last_valid_out.push_str(&new_composed2);
                 }
@@ -242,6 +254,7 @@ impl Diffable for UltraFastViEngine {
             self.raw_len = 0;
             self.out_buf.clear();
             self.diff.last_valid_raw_len = 0;
+            self.diff.last_valid_coda_start = 0;
             self.diff.last_valid_out.clear();
             let (bs, _) = Self::diff_into(&prev, &new_composed, &mut self.diff.diff_suffix);
             self.diff.prev_rendered.clear();
@@ -252,9 +265,11 @@ impl Diffable for UltraFastViEngine {
         let is_raw = Self::is_raw_passthrough_slice(&self.diff.raw_chars, &new_composed);
         if is_raw {
             self.diff.last_valid_raw_len = 0;
+            self.diff.last_valid_coda_start = 0;
             self.diff.last_valid_out.clear();
         } else {
             self.diff.last_valid_raw_len = self.diff.raw_chars.len();
+            self.diff.last_valid_coda_start = Self::raw_coda_start(&self.diff.raw_chars);
             self.diff.last_valid_out.clear();
             let _ = self.diff.last_valid_out.push_str(&new_composed);
         }
@@ -284,6 +299,7 @@ impl Diffable for UltraFastViEngine {
         self.diff.prev_rendered.clear();
         self.diff.prev_inner_render.clear();
         self.diff.last_valid_raw_len = 0;
+        self.diff.last_valid_coda_start = 0;
         self.diff.last_valid_out.clear();
         // NOTE: diff_committed is NOT cleared here - it accumulates across commits
         // It only gets cleared on reset_diff() or word boundary (via diff.clear())
@@ -415,5 +431,18 @@ impl UltraFastViEngine {
         if raw.len() != last_valid_raw_len + 1 { return false; }
         let ch = raw[last_valid_raw_len];
         !Self::is_ascii_vowel(ch as u8)
+    }
+
+    /// Find the raw index where the coda starts (index past the last vowel).
+    /// If there is no vowel, the whole slice is treated as onset/coda.
+    #[inline]
+    pub(crate) fn raw_coda_start(raw: &[char]) -> usize {
+        let mut last_vowel = None;
+        for (i, &c) in raw.iter().enumerate() {
+            if Self::is_ascii_vowel(c as u8) {
+                last_vowel = Some(i);
+            }
+        }
+        last_vowel.map(|i| i + 1).unwrap_or(0)
     }
 }

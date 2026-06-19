@@ -71,6 +71,12 @@ size_t uvie_engine_committed_text(const UvieEngine *engine, char *out_buf, size_
  */
 size_t uvie_engine_current_output(const UvieEngine *engine, char *out_buf, size_t out_len);
 
+/**
+ * Get the diff-mode raw keystroke chars currently in the composing buffer.
+ * Returns byte count of written string (excluding null terminator).
+ */
+size_t uvie_engine_raw_chars(const UvieEngine *engine, char *out_buf, size_t out_len);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

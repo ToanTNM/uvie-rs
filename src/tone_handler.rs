@@ -24,7 +24,7 @@ impl ToneHandler for UltraFastViEngine {
         }
 
         // Special 'r' heuristic: after certain onset consonants, 'r' is part of
-        // the onset (e.g. "tr", "br") — not a tone key.
+        // the onset (e.g. "tr", "br") - not a tone key.
         if b == b'r' && n > 0 {
             let prev = self.buf.get(n - 1).base;
             if matches!(prev, b't' | b'p' | b'f' | b'c' | b'b' | b'd' | b'g' | b'k') {

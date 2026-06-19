@@ -686,7 +686,7 @@ struct AboutPane: View {
             Spacer()
 
             VStack(spacing: 22) {
-                // App icon — load from bundle if packaged, otherwise from source repo
+                // App icon - load from bundle if packaged, otherwise from source repo
                 Image(nsImage: appIconImage())
                     .resizable()
                     .aspectRatio(contentMode: .fit)
