@@ -194,6 +194,7 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
     NucleusEntry { seq: &['u', 'y', 'u'], tone_idx: 1 }, // uyu
     NucleusEntry { seq: &['ư', 'ơ', 'i'], tone_idx: 1 }, // ươi
     NucleusEntry { seq: &['ư', 'ơ', 'u'], tone_idx: 1 }, // ươu
+    NucleusEntry { seq: &['u', 'ô', 'i'], tone_idx: 1 }, // uôi (cuối, muối, etc.)
     NucleusEntry { seq: &['y', 'ê', 'u'], tone_idx: 1 }, // yêu
 
     // ---- Diphthongs (2 vowels) — tone on first (the "main") vowel ----
