@@ -175,7 +175,7 @@ jobs:
       # ── 10. Package DMG ────────────────────────────────────────────────────
       - name: Create DMG
         run: |
-          VERSION="${GITHUB_REF_NAME:-dev}"
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" UVieKey/Info.plist)
           DMG_NAME="UVieKey-${VERSION}-universal.dmg"
 
           # Create staging directory for DMG contents
@@ -209,8 +209,8 @@ jobs:
 
             ### Installation
             1. Download `UVieKey-*-universal.dmg`
-            2. Open DMG → drag UVieKey.app to Applications
-            3. Launch → grant Accessibility permission in System Settings
+            2. Open DMG and drag UVieKey.app to Applications
+            3. Launch UVieKey and grant Accessibility permission in System Settings
             4. UVieKey icon will appear in menu bar
 
             ### Requirements
