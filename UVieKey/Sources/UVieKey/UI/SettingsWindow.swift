@@ -125,9 +125,9 @@ private struct SidebarRow: View {
 
 struct GeneralPane: View {
     @AppStorage(DefaultsKey.inputMethod)    private var inputMethod: String = "telex"
-    @AppStorage(DefaultsKey.checkSpelling)  private var checkSpelling: Bool = true
     @AppStorage(DefaultsKey.smartSwitchKey) private var smartSwitchKey: Bool = false
     @AppStorage(DefaultsKey.engineEnabled)  private var engineEnabled: Bool = true
+    @AppStorage(DefaultsKey.autoDisableOnNonLatinLayout) private var autoDisableOnNonLatinLayout: Bool = false
 
     private var isVietnameseMode: Binding<Bool> {
         Binding(
@@ -153,7 +153,7 @@ struct GeneralPane: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(isVietnameseMode.wrappedValue ? "Tiếng Việt" : "English")
                             .font(.system(size: 14, weight: .semibold))
-                        Text(isVietnameseMode.wrappedValue ? "Đang hoạt động — Gõ Tiếng Việt" : "Bàn phím ở chế độ English")
+                        Text(isVietnameseMode.wrappedValue ? "Gõ Tiếng Việt" : "English Keyboard")
                             .font(.system(size: 11))
                             .foregroundStyle(isVietnameseMode.wrappedValue ? Color.accentColor : .secondary)
                     }
@@ -188,15 +188,19 @@ struct GeneralPane: View {
 
             PaneSection("Thông minh") {
                 SettingsCard {
-                    SToggleRow("checkmark.circle",
-                                "Kiểm tra chính tả",
-                                "Phát hiện và gợi ý sửa lỗi Tiếng Việt",
-                                $checkSpelling)
-                    SCardDivider()
                     SToggleRow("arrow.triangle.2.circlepath",
                                 "Nhớ ngôn ngữ từng ứng dụng",
                                 "Tự động Tiếng Việt / English khi chuyển app",
                                 $smartSwitchKey)
+                }
+            }
+
+            PaneSection("Phát hiện ngôn ngữ") {
+                SettingsCard {
+                    SToggleRow("magnifyingglass",
+                                "Tự động tắt khi dùng layout khác",
+                                "Bỏ qua engine khi keyboard không phải Latin layout",
+                                $autoDisableOnNonLatinLayout)
                 }
             }
         }
@@ -644,27 +648,6 @@ struct AdvancedPane: View {
                 }
             }
 
-            PaneSection("Phát hiện ngôn ngữ") {
-                SettingsCard {
-                    HStack(spacing: 14) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 24)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Tự động tắt khi dùng layout khác")
-                                .font(.system(size: 13, weight: .medium))
-                            Text("Bỏ qua engine khi keyboard không phải English layout")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        ComingSoonBadge()
-                    }
-                    .padding(14)
-                }
-            }
-
             PaneSection("Quyền truy cập") {
                 SettingsCard {
                     Button { AccessibilityChecker.openPrivacySettings() } label: {
@@ -703,69 +686,11 @@ struct AboutPane: View {
             Spacer()
 
             VStack(spacing: 22) {
-                // App icon — Rust-inspired: warm iron + oxide tones
-                ZStack {
-                    // Warm glow beneath
-                    RoundedRectangle(cornerRadius: 24)
-                        .fill(Color(red: 0.78, green: 0.28, blue: 0.08))
-                        .frame(width: 92, height: 92)
-                        .blur(radius: 14)
-                        .opacity(0.45)
-                        .offset(y: 6)
-
-                    // Main body — deep rust gradient top-to-bottom
-                    RoundedRectangle(cornerRadius: 22)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color(red: 0.82, green: 0.33, blue: 0.11), // oxide orange
-                                    Color(red: 0.48, green: 0.16, blue: 0.05), // dark iron-brown
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .frame(width: 92, height: 92)
-                        // Metallic sheen: subtle white catch-light top-left
-                        .overlay(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.18), Color.clear],
-                                startPoint: .topLeading,
-                                endPoint: .center
-                            )
-                            .clipShape(RoundedRectangle(cornerRadius: 22))
-                        )
-
-                    // Inner inset ring — aged metal border effect
-                    RoundedRectangle(cornerRadius: 18)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.22),
-                                    Color.black.opacity(0.18),
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                        .frame(width: 78, height: 78)
-
-                    // Letter V — warm cream white, slightly engraved feel
-                    Text("V")
-                        .font(.system(size: 50, weight: .heavy, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [
-                                    Color(red: 1.0, green: 0.94, blue: 0.84), // warm cream top
-                                    Color(red: 0.95, green: 0.80, blue: 0.65), // amber bottom
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .shadow(color: .black.opacity(0.35), radius: 2, y: 2)
-                }
+                // App icon — load from bundle if packaged, otherwise from source repo
+                Image(nsImage: appIconImage())
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 92, height: 92)
 
                 VStack(spacing: 6) {
                     Text("UVieKey")
@@ -797,6 +722,26 @@ struct AboutPane: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private func appIconImage() -> NSImage {
+        // 1) Try the app bundle's icon (used in packaged .app builds)
+        if let bundleIcon = NSImage(named: "AppIcon") {
+            return bundleIcon
+        }
+        // 2) Fall back to the source repo path (used during `swift build` / Xcode run)
+        let sourceFile = URL(fileURLWithPath: #file)
+        let repoIcon = sourceFile
+            .deletingLastPathComponent() // UI
+            .deletingLastPathComponent() // UVieKey
+            .deletingLastPathComponent() // Sources
+            .deletingLastPathComponent() // UVieKey
+            .appendingPathComponent("AppIcon.icns")
+        if let repoIconImage = NSImage(contentsOf: repoIcon) {
+            return repoIconImage
+        }
+        // 3) Last resort blank image
+        return NSImage(size: NSSize(width: 92, height: 92))
     }
 
     private func aboutLink(_ icon: String, _ label: String, _ url: String) -> some View {

@@ -49,7 +49,8 @@ static LEGAL_ONSETS: &[&[u8]] = &[
     // đ (base 'd', but in practice the engine stores raw 'd' for đ onset too)
     b"d",
     // Foreign/extended allowed as onset
-    b"f", b"w", b"z", b"j",
+    // NOTE: 'f' removed to fix "fix" -> "fĩ" bug (English word interference)
+    b"w", b"z", b"j",
 ];
 
 /// Returns `true` if `onset` (slice of raw base bytes before the nucleus) is
@@ -60,7 +61,8 @@ pub fn is_legal_onset(onset: &[u8]) -> bool {
         1 => {
             let b = onset[0];
             // Any single lowercase consonant that is not a pure vowel key
-            matches!(b, b'b'|b'c'|b'd'|b'f'|b'g'|b'h'|b'j'|b'k'|b'l'|
+            // NOTE: 'f' excluded to fix "fix" -> "fĩ" bug (English word interference)
+            matches!(b, b'b'|b'c'|b'd'|b'g'|b'h'|b'j'|b'k'|b'l'|
                         b'm'|b'n'|b'p'|b'q'|b'r'|b's'|b't'|b'v'|b'w'|
                         b'x'|b'z')
         }
@@ -192,6 +194,7 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
     NucleusEntry { seq: &['u', 'y', 'u'], tone_idx: 1 }, // uyu
     NucleusEntry { seq: &['ư', 'ơ', 'i'], tone_idx: 1 }, // ươi
     NucleusEntry { seq: &['ư', 'ơ', 'u'], tone_idx: 1 }, // ươu
+    NucleusEntry { seq: &['u', 'ô', 'i'], tone_idx: 1 }, // uôi (cuối, muối, etc.)
     NucleusEntry { seq: &['y', 'ê', 'u'], tone_idx: 1 }, // yêu
 
     // ---- Diphthongs (2 vowels) — tone on first (the "main") vowel ----
@@ -200,9 +203,14 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
     NucleusEntry { seq: &['â', 'y'], tone_idx: 0 }, // ây
     NucleusEntry { seq: &['â', 'o'], tone_idx: 0 }, // âo (nấo etc.)
     NucleusEntry { seq: &['ă', 'y'], tone_idx: 0 }, // ăy (rare)
+    NucleusEntry { seq: &['ă', 'u'], tone_idx: 0 }, // ău (tầu - boat)
+    NucleusEntry { seq: &['o', 'ă'], tone_idx: 1 }, // oă (hoăng, loăng quăng)
+    NucleusEntry { seq: &['ê', 'o'], tone_idx: 0 }, // êo (rare)
     NucleusEntry { seq: &['ê', 'u'], tone_idx: 0 }, // êu (nếu → tone on ê)
     NucleusEntry { seq: &['ô', 'i'], tone_idx: 0 }, // ôi
+    NucleusEntry { seq: &['ô', 'u'], tone_idx: 0 }, // ôu (rare)
     NucleusEntry { seq: &['ơ', 'i'], tone_idx: 0 }, // ơi
+    NucleusEntry { seq: &['ơ', 'u'], tone_idx: 0 }, // ơu (rare)
     NucleusEntry { seq: &['ư', 'a'], tone_idx: 0 }, // ưa
     NucleusEntry { seq: &['ư', 'i'], tone_idx: 0 }, // ưi (gửi → tone on ư)
     NucleusEntry { seq: &['ư', 'o'], tone_idx: 0 }, // ưo (rare)
@@ -212,6 +220,7 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
     // plain-vowel diphthongs
     NucleusEntry { seq: &['i', 'a'], tone_idx: 0 }, // ia (mía → tone on i)
     NucleusEntry { seq: &['i', 'ê'], tone_idx: 1 }, // iê / yê (tiến → tone on ê)
+    NucleusEntry { seq: &['i', 'o'], tone_idx: 0 }, // io (rare)
     NucleusEntry { seq: &['y', 'ê'], tone_idx: 1 }, // yê (huyền → tone on ê)
     NucleusEntry { seq: &['u', 'a'], tone_idx: 0 }, // ua (múa → tone on u)
     NucleusEntry { seq: &['u', 'â'], tone_idx: 1 }, // uâ — tone on â (chuẩn, tuần)
@@ -219,6 +228,7 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
     NucleusEntry { seq: &['u', 'y'], tone_idx: 1 }, // uy (tuỳ → tone on y in modern ortho)
     NucleusEntry { seq: &['u', 'i'], tone_idx: 0 }, // ui
     NucleusEntry { seq: &['u', 'o'], tone_idx: 0 }, // uo (vuốt → tone on u, but uo is often ươ)
+    NucleusEntry { seq: &['u', 'u'], tone_idx: 0 }, // uu (transient state for uuw → ưu)
     NucleusEntry { seq: &['a', 'i'], tone_idx: 0 }, // ai
     NucleusEntry { seq: &['a', 'o'], tone_idx: 0 }, // ao
     NucleusEntry { seq: &['a', 'u'], tone_idx: 0 }, // au

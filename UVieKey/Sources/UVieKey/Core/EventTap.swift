@@ -77,6 +77,7 @@ final class EventTap: ObservableObject {
     private let appDetector = AppContextDetector()
     private let axInjector: AXTextInjector
     private let macroManager = MacroManager.shared
+    private let layoutMonitor = KeyboardLayoutMonitor.shared
 
     /// Tag synthetic events so we don't process our own output.
     private let syntheticTag: Int64 = 0x55564945 // "UVIE"
@@ -93,12 +94,17 @@ final class EventTap: ObservableObject {
     /// Auto-capitalize state: track if we're at the start of a sentence
     private var isAtSentenceStart = true
 
+    /// App switch detection: prevent ghost characters from previous app
+    private var previousBundleID: String = ""
+    private var appSwitchObserver: NSObjectProtocol?
+
     init(inputMethodManager: InputMethodManager) {
         self.inputMethodManager = inputMethodManager
         self.axInjector = AXTextInjector(engine: _engine)
         eventSource = CGEventSource(stateID: .privateState)
         applyEngineSettings()
         observeSettingsChanges()
+        observeAppSwitch()
     }
 
     deinit {
@@ -106,6 +112,9 @@ final class EventTap: ObservableObject {
         appDetector.stop()
         if let defaultsObserver {
             NotificationCenter.default.removeObserver(defaultsObserver)
+        }
+        if let appSwitchObserver {
+            NotificationCenter.default.removeObserver(appSwitchObserver)
         }
     }
 
@@ -194,6 +203,24 @@ final class EventTap: ObservableObject {
         }
     }
 
+    private func observeAppSwitch() {
+        appSwitchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            let currentBundleID = self.appDetector.bundleID
+            if currentBundleID != self.previousBundleID {
+                self.previousBundleID = currentBundleID
+                // Reset engine to clear any stuck state from previous app
+                self._engine.reset()
+                // Reset auto-capitalize state for new app context
+                self.isAtSentenceStart = true
+            }
+        }
+    }
+
     // MARK: - Event Handling
 
     private let breakKeyCodes: Set<Int64> = [
@@ -249,6 +276,17 @@ final class EventTap: ObservableObject {
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         let flags = event.flags
 
+        // DEBUG: Trace ghost character issue
+        if type == .keyDown {
+            let composing = _engine.currentOutput()
+            #if DEBUG
+            let committed = _engine.committedText()
+            if !composing.isEmpty || !committed.isEmpty {
+                NSLog("[UVieKey] keystroke - keyCode: \(keyCode), composing: '\(composing)', committed: '\(committed)'")
+            }
+            #endif
+        }
+
         // Pass through modifier combinations (except Option+Backspace which we handle specially)
         let isAlternateOnly = flags.contains(.maskAlternate) &&
                              !flags.contains(.maskCommand) &&
@@ -268,6 +306,13 @@ final class EventTap: ObservableObject {
 
         // In English mode, pass everything through
         guard inputMethodManager.isVietnamese else {
+            return Unmanaged.passRetained(event)
+        }
+
+        // Auto-disable on non-Latin keyboard layout
+        if UserDefaults.standard.bool(forKey: DefaultsKey.autoDisableOnNonLatinLayout),
+           layoutMonitor.isNonLatinLayout {
+            // Pass through when non-Latin layout is active (CJK, Cyrillic, etc.)
             return Unmanaged.passRetained(event)
         }
 
@@ -496,6 +541,12 @@ final class EventTap: ObservableObject {
     // MARK: - AX Mode (Accessibility text injection)
 
     private func handleAXEvent(type: CGEventType, keyCode: Int64, event: CGEvent) -> Unmanaged<CGEvent>? {
+        // Auto-disable on non-Latin keyboard layout for AX mode
+        if UserDefaults.standard.bool(forKey: DefaultsKey.autoDisableOnNonLatinLayout),
+           layoutMonitor.isNonLatinLayout {
+            return Unmanaged.passRetained(event)
+        }
+
         // Backspace
         if keyCode == 51 {
             if type == .keyUp {

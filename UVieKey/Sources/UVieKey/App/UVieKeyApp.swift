@@ -41,6 +41,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             DefaultsKey.clipboardSplitDelimiter: "newline",
             DefaultsKey.clipboardSplitMinLength: 3,
             DefaultsKey.inputMethodHotkeyEnabled: true,
+            DefaultsKey.autoDisableOnNonLatinLayout: false,
+            DefaultsKey.keepPopoverOpen: false,
         ])
 
         ClipboardManager.shared.startObserving()

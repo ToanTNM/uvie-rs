@@ -285,6 +285,8 @@ impl Diffable for UltraFastViEngine {
         self.diff.prev_inner_render.clear();
         self.diff.last_valid_raw_len = 0;
         self.diff.last_valid_out.clear();
+        // NOTE: diff_committed is NOT cleared here - it accumulates across commits
+        // It only gets cleared on reset_diff() or word boundary (via diff.clear())
         self.diff.diff_suffix.clear();
         (0, &self.diff.diff_suffix)
     }
