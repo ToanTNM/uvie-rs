@@ -70,14 +70,13 @@ final class EngineBridge {
     // MARK: - Keystroke handling
 
     /// Feed a single character. Returns (backspaces, new_output).
-    /// Handles both ASCII and non-ASCII characters by converting to lowercase first.
+    /// The Rust engine tracks uppercase via the raw key byte, so we must pass
+    /// the original ASCII byte (e.g., 'A' stays 'A') instead of lowercasing it.
     func feed(char: Character) -> (Int, String) {
         guard let engine else { return (0, "") }
         var buf = [CChar](repeating: 0, count: 128)
-        // For non-ASCII (e.g., 'Á'), lowercase to 'á' then get asciiValue
-        // For ASCII uppercase (e.g., 'V'), lowercase to 'v'
-        let lowerChar = char.lowercased().first ?? char
-        let byte = CChar(lowerChar.asciiValue ?? 0)
+        // Only ASCII keys are feedable; non-ASCII passes 0 which the engine ignores.
+        let byte = CChar(char.asciiValue ?? 0)
         let bs = uvie_engine_feed(engine, byte, &buf, buf.count)
         return (bs, String(cString: buf))
     }

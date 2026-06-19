@@ -17,6 +17,5 @@ swift build \
     -Xlinker -luvie \
     "$@"
 
+echo "Build complete! ($(date +%s) sec)"
 echo "=== Build complete ==="
-echo "Binary: .build/debug/UVieKey"
-echo "Run: swift run -Xswiftc -I$UVIE_RS_DIR/include -Xswiftc -L$UVIE_RS_DIR/target/release -Xlinker -luvie"
