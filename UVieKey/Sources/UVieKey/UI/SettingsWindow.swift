@@ -695,7 +695,7 @@ struct AboutPane: View {
                 VStack(spacing: 6) {
                     Text("UVieKey")
                         .font(.system(size: 26, weight: .bold))
-                    Text("Phiên bản 1.0.0")
+                    Text("Phiên bản \(AppVersion.fullVersion)")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                 }

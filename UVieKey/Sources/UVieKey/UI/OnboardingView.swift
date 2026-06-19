@@ -110,22 +110,11 @@ private struct WelcomeStep: View {
     var body: some View {
         VStack(spacing: 28) {
             // App icon
-            ZStack {
-                RoundedRectangle(cornerRadius: 26)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color(red: 0.2, green: 0.4, blue: 1.0),
-                                     Color(red: 0.5, green: 0.2, blue: 0.9)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 100, height: 100)
-                    .shadow(color: .blue.opacity(0.3), radius: 16, y: 8)
-                Text("V")
-                    .font(.system(size: 56, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-            }
+            Image("AppIcon")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 100, height: 100)
+                .shadow(color: .black.opacity(0.15), radius: 16, y: 8)
 
             VStack(spacing: 12) {
                 Text("Chào mừng đến với UVieKey")

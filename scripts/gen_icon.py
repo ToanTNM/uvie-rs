@@ -126,7 +126,7 @@ def make_icon(size: int) -> Image.Image:
 
     # "uvie" wordmark - larger and bolder
     text = "uvie"
-    target_w_ratio = 0.9
+    target_w_ratio = 0.8
     target_w = size * target_w_ratio
 
     font = fit_font_size(draw, text, target_w)

@@ -181,7 +181,7 @@ struct MenuBarPopoverView: View {
             Text("UVieKey")
                 .font(.system(size: 13, weight: .semibold))
             Spacer()
-            Text("v1.0.0")
+            Text(AppVersion.fullVersion)
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.tertiary)
                 .padding(.horizontal, 7)

@@ -30,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         UserDefaults.standard.register(defaults: [
             DefaultsKey.engineEnabled:      true,
             DefaultsKey.checkSpelling:      true,
-            DefaultsKey.smartSwitchKey:     false,
+            DefaultsKey.smartSwitchKey:     true,
             DefaultsKey.uppercaseFirstChar: false,
             DefaultsKey.macroEnabled:       false,
             DefaultsKey.modernOrthography:  true,
@@ -41,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             DefaultsKey.clipboardSplitDelimiter: "newline",
             DefaultsKey.clipboardSplitMinLength: 3,
             DefaultsKey.inputMethodHotkeyEnabled: true,
-            DefaultsKey.autoDisableOnNonLatinLayout: false,
+            DefaultsKey.autoDisableOnNonLatinLayout: true,
             DefaultsKey.keepPopoverOpen: false,
         ])
 
