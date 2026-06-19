@@ -131,7 +131,7 @@ private struct WelcomeStep: View {
                 Text("Chào mừng đến với UVieKey")
                     .font(.system(size: 28, weight: .bold))
 
-                Text("Bộ gõ Tiếng Việt nhanh, nhẹ và chính xác cho macOS.\nPowered by uvie-rs — Rust engine zero-cost.")
+                Text("Bộ gõ Tiếng Việt nhanh, nhẹ và chính xác cho macOS.\nPowered by uvie-rs - Rust engine zero-cost.")
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

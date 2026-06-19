@@ -1,4 +1,4 @@
-//! Integration tests for UltraFastViEngine::feed_diff — diff-based API.
+//! Integration tests for UltraFastViEngine::feed_diff - diff-based API.
 
 use uvie::diff::Diffable;
 use uvie::UltraFastViEngine;

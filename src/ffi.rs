@@ -7,7 +7,7 @@ use crate::engine::UltraFastViEngine;
 use crate::modes::InputMethod;
 
 // ===================================================================
-// Single opaque engine type — diff-based API
+// Single opaque engine type - diff-based API
 // ===================================================================
 
 /// Opaque handle to the engine. C code only ever holds a pointer to this type;

@@ -89,13 +89,13 @@ pub fn is_legal_onset(onset: &[u8]) -> bool {
 /// `{T}, {P}, {C}, {N}, {M}, {NG}, {NH}, {CH}`
 ///
 /// Note: `ng`, `nh`, `ch` are stored as 2-byte slices; single finals as 1-byte.
-/// The key `c` can represent final /k/ (before ă/â) *or* final /c/ — both legal.
+/// The key `c` can represent final /k/ (before ă/â) *or* final /c/ - both legal.
 #[allow(dead_code)]
 static LEGAL_CODAS: &[&[u8]] = &[
     b"t", b"p", b"c", b"n", b"m",
     // digraph codas
     b"ng", b"nh", b"ch",
-    // glide finals — 'i' and 'y' act as coda in oai, oay, etc.
+    // glide finals - 'i' and 'y' act as coda in oai, oay, etc.
     b"i", b"y", b"u",
     // 'o' appears as coda in "ao", "eo" etc. (vowel clusters handle this via
     // the nucleus table, but some patterns treat 'o' as a trailing glide)
@@ -197,7 +197,7 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
     NucleusEntry { seq: &['u', 'ô', 'i'], tone_idx: 1 }, // uôi (cuối, muối, etc.)
     NucleusEntry { seq: &['y', 'ê', 'u'], tone_idx: 1 }, // yêu
 
-    // ---- Diphthongs (2 vowels) — tone on first (the "main") vowel ----
+    // ---- Diphthongs (2 vowels) - tone on first (the "main") vowel ----
     // Modified-vowel diphthongs first (more specific)
     NucleusEntry { seq: &['â', 'u'], tone_idx: 0 }, // âu
     NucleusEntry { seq: &['â', 'y'], tone_idx: 0 }, // ây
@@ -223,7 +223,7 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
     NucleusEntry { seq: &['i', 'o'], tone_idx: 0 }, // io (rare)
     NucleusEntry { seq: &['y', 'ê'], tone_idx: 1 }, // yê (huyền → tone on ê)
     NucleusEntry { seq: &['u', 'a'], tone_idx: 0 }, // ua (múa → tone on u)
-    NucleusEntry { seq: &['u', 'â'], tone_idx: 1 }, // uâ — tone on â (chuẩn, tuần)
+    NucleusEntry { seq: &['u', 'â'], tone_idx: 1 }, // uâ - tone on â (chuẩn, tuần)
     NucleusEntry { seq: &['u', 'ê'], tone_idx: 0 }, // uê
     NucleusEntry { seq: &['u', 'y'], tone_idx: 1 }, // uy (tuỳ → tone on y in modern ortho)
     NucleusEntry { seq: &['u', 'i'], tone_idx: 0 }, // ui
@@ -307,7 +307,7 @@ pub fn is_legal_syllable(onset_raw: &[u8], nucleus_out: &[char], coda_raw: &[u8]
 // ---------------------------------------------------------------------------
 
 /// Returns `true` if the given raw onset bytes form a **legal prefix** of some
-/// Vietnamese onset — i.e., the onset is valid as-is OR could become valid with
+/// Vietnamese onset - i.e., the onset is valid as-is OR could become valid with
 /// more keystrokes.
 ///
 /// Used to decide whether to keep composing or fall through to English
@@ -341,7 +341,7 @@ pub fn onset_is_qu(onset_raw: &[u8]) -> bool {
 }
 
 /// Returns `true` if the onset is `gi` (so the following `i` is a glide, not
-/// a nucleus vowel). `d` is the raw key for `đ` as onset — `gi` raw is `gi`.
+/// a nucleus vowel). `d` is the raw key for `đ` as onset - `gi` raw is `gi`.
 #[inline]
 pub fn onset_is_gi(onset_raw: &[u8]) -> bool {
     onset_raw == b"gi"

@@ -26,7 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory) // Hide dock icon
 
-        // Register factory defaults — only applied if key has never been set
+        // Register factory defaults - only applied if key has never been set
         UserDefaults.standard.register(defaults: [
             DefaultsKey.engineEnabled:      true,
             DefaultsKey.checkSpelling:      true,

@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - C FFI (UvieEngine — diff-based API)
+// MARK: - C FFI (UvieEngine - diff-based API)
 
 @_silgen_name("uvie_engine_new")
 func uvie_engine_new() -> OpaquePointer?

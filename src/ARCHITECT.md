@@ -4,7 +4,7 @@
 
 ## Design Principles
 
-1. **Validate raw keystrokes, not resolved output.** The engine checks the raw ASCII sequence against positive syllable tables *before* applying any transform. This makes English passthrough automatic — if the raw keys do not form a legal Vietnamese syllable pattern, the word is emitted verbatim.
+1. **Validate raw keystrokes, not resolved output.** The engine checks the raw ASCII sequence against positive syllable tables *before* applying any transform. This makes English passthrough automatic - if the raw keys do not form a legal Vietnamese syllable pattern, the word is emitted verbatim.
 
 2. **Per-character state.** Every typed key gets a `Syl` entry storing its raw base, resolved display char, tone, and modifier flags. Transforms are bit-flips on the right element; no multi-pass bubbling or reordering.
 
@@ -18,7 +18,7 @@
 
 ## State Model
 
-### `Syl` — one entry per typed key
+### `Syl` - one entry per typed key
 
 ```rust
 #[derive(Clone, Copy, Default)]
@@ -42,7 +42,7 @@ pub struct Syl {
 
 `out` is recomputed from `base + flags + tone` whenever any of them change. Tone is always applied *after* modifier resolution, so the lookup path is deterministic.
 
-### `UltraFastViEngine` — top-level state
+### `UltraFastViEngine` - top-level state
 
 ```rust
 pub struct UltraFastViEngine {
@@ -101,7 +101,7 @@ feed(key):
 
 ### Classification
 
-Each input mode (Telex / VNI) owns a `classify` lookup table: 256 `u8` values where bits mark `IS_VOWEL`, `IS_TONE_KEY`, `IS_MODIFIER`. Classification is a single array index — O(1).
+Each input mode (Telex / VNI) owns a `classify` lookup table: 256 `u8` values where bits mark `IS_VOWEL`, `IS_TONE_KEY`, `IS_MODIFIER`. Classification is a single array index - O(1).
 
 ### Vowel handling (`composing.rs`)
 
@@ -185,7 +185,7 @@ feed_diff(key):
 | `tables.rs` | Static lookup tables: legal onsets, nuclei, codas, tone targets, tone-coda constraints |
 | `modes.rs` | `Mode` tables for Telex and VNI: `classify[256]`, `tone[256]`, mode trait |
 | `tone.rs` | Unicode tone mapping: base vowel + tone index → precomposed Unicode char |
-| `buffers.rs` | `OutBuffer`, `CharVec` — fixed-capacity string types (std or heapless depending on feature) |
+| `buffers.rs` | `OutBuffer`, `CharVec` - fixed-capacity string types (std or heapless depending on feature) |
 | `diff.rs` | `Diffable` trait: V-C-V split detection, minimal-edit diff for IME consumption |
 | `ffi.rs` | C ABI: `uvie_engine_new`, `uvie_feed`, `uvie_backspace`, `uvie_set_mode`, etc. Mutex-wrapped for thread safety |
 | `tests.rs` | Exhaustive test suite covering Telex, VNI, quick telex, quick start, modern orthography, macros, backspace, edge cases |
@@ -196,11 +196,11 @@ feed_diff(key):
 
 The Rust library compiles to `staticlib` + `cdylib`. The Swift macOS app (`UVieKey/`) links against `libuvie.a` and calls the C API:
 
-- `uvie_engine_new()` / `uvie_engine_free()` — lifecycle
-- `uvie_feed(engine, key, &bs, suffix, suffix_len)` — returns backspace count and writes suffix
-- `uvie_backspace(engine, &bs, suffix, suffix_len)` — same, for backspace
-- `uvie_set_mode(engine, method)` — switch Telex / VNI
-- `uvie_set_quick_telex()`, `uvie_set_modern_orthography()`, etc. — feature toggles
+- `uvie_engine_new()` / `uvie_engine_free()` - lifecycle
+- `uvie_feed(engine, key, &bs, suffix, suffix_len)` - returns backspace count and writes suffix
+- `uvie_backspace(engine, &bs, suffix, suffix_len)` - same, for backspace
+- `uvie_set_mode(engine, method)` - switch Telex / VNI
+- `uvie_set_quick_telex()`, `uvie_set_modern_orthography()`, etc. - feature toggles
 
 All engine state lives inside an opaque `UvieEngine` pointer; Swift never touches Rust structs directly.
 
@@ -209,9 +209,9 @@ All engine state lives inside an opaque `UvieEngine` pointer; Swift never touche
 ## Performance Characteristics
 
 - **Classification**: O(1) array lookup.
-- **Syllable partition**: O(syllable length) ≤ O(24) — scans the buffer once.
-- **Validation**: O(1) — positive table lookups on bounded slices.
-- **Rendering**: O(syllable length) — single pass over `SylBuf`.
+- **Syllable partition**: O(syllable length) ≤ O(24) - scans the buffer once.
+- **Validation**: O(1) - positive table lookups on bounded slices.
+- **Rendering**: O(syllable length) - single pass over `SylBuf`.
 - **Backspace**: replays raw prefix through the engine; worst case O(n²) for n backspaces, but n ≤ 24 and backspace is not on the forward-path for typing.
 - **Memory**: all fixed-size stack arrays. No allocator calls during normal operation.
 

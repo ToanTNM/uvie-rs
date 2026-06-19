@@ -63,7 +63,7 @@ impl Composable for UltraFastViEngine {
             }
         }
 
-        // Plain vowel — just push.
+        // Plain vowel - just push.
         self.buf.push(Syl::literal(b, caps));
         self.reapply_tone_after_nucleus_change();
     }
@@ -99,7 +99,7 @@ impl Composable for UltraFastViEngine {
             return;
         }
 
-        // Valid Vietnamese — render resolved chars from buf.
+        // Valid Vietnamese - render resolved chars from buf.
         for i in 0..n {
             let s = self.buf.get(i);
             let c = s.render();

@@ -91,7 +91,7 @@ final class MenuBarController: ObservableObject {
         }
     }
 
-    // MARK: Icon — drawn as NSImage for pixel-perfect vertical centering
+    // MARK: Icon - drawn as NSImage for pixel-perfect vertical centering
 
     private func updateIcon() {
         statusItem?.button?.image = makeIcon()

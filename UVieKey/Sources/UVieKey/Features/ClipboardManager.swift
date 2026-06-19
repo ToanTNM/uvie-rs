@@ -56,7 +56,7 @@ final class ClipboardManager: ObservableObject {
         guard pasteboard.changeCount != lastChangeCount else { return }
         lastChangeCount = pasteboard.changeCount
 
-        // Something new was copied externally — clear the "copied" indicator
+        // Something new was copied externally - clear the "copied" indicator
         if !isCopyingFromHistory {
             recentlyCopiedString = nil
         }

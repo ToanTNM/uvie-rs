@@ -129,7 +129,7 @@ impl ModifierHandler for UltraFastViEngine {
             }
         }
 
-        // No match — standalone 'w' becomes ư at onset.
+        // No match - standalone 'w' becomes ư at onset.
         let onset_len = self.onset_len();
         if onset_len == n {
             let mut syl = Syl::literal(b'w', caps);

@@ -85,7 +85,7 @@ impl Diffable for UltraFastViEngine {
             return (0, &self.diff.diff_suffix);
         }
 
-        // Safety valve: buffer full — commit, start fresh.
+        // Safety valve: buffer full - commit, start fresh.
         if self.diff.raw_chars.is_full() {
             self.render_out_buf();
             let _ = self.diff.diff_committed.push_str(&self.out_buf);

@@ -348,7 +348,7 @@ final class EventTap: ObservableObject {
             print("[UVieKey] BACKSPACE keyCode=\(keyCode) bs=\(bs) out='\(out)' composing='\(composingBs)' committed='\(committedBs)' raw='\(rawBs)' isComposing=\(_engine.isComposing) compound=\(isCompoundApp) chromium=\(isChromium)")
             #endif
             if bs == 0 && out.isEmpty && !_engine.isComposing {
-                // Not composing — let OS handle it
+                // Not composing - let OS handle it
                 return Unmanaged.passRetained(event)
             }
             // Debug: log if engine is composing but backspace returned empty (shouldn't happen)
@@ -570,7 +570,7 @@ final class EventTap: ObservableObject {
             return success ? nil : Unmanaged.passRetained(event)
         }
 
-        // Space — commit and pass through
+        // Space - commit and pass through
         if keyCode == 49 {
             if type == .keyUp {
                 return Unmanaged.passRetained(event)
@@ -579,7 +579,7 @@ final class EventTap: ObservableObject {
             return Unmanaged.passRetained(event)
         }
 
-        // Break keys — commit and pass through
+        // Break keys - commit and pass through
         if isBreakKey(keyCode) {
             if type == .keyUp {
                 return Unmanaged.passRetained(event)

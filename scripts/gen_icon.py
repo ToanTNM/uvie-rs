@@ -124,7 +124,7 @@ def make_icon(size: int) -> Image.Image:
 
     draw = ImageDraw.Draw(img)
 
-    # "uvie" wordmark — larger and bolder
+    # "uvie" wordmark - larger and bolder
     text = "uvie"
     target_w_ratio = 0.9
     target_w = size * target_w_ratio
