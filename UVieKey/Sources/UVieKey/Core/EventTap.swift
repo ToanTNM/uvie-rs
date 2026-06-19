@@ -62,6 +62,15 @@ private func checkIsChromiumBrowser(_ bundleID: String) -> Bool {
     chromiumBrowsers.contains(bundleID)
 }
 
+/// Returns true for shortcuts that select text (Cmd+A, Shift+arrows, etc.).
+/// When the user selects text and types over it, the engine's diff state
+/// becomes invalid because it cannot see the selection.
+private func isSelectionShortcut(keyCode: Int64, flags: CGEventFlags) -> Bool {
+    let isCmdA = keyCode == 0 && flags.contains(.maskCommand)
+    let isShiftArrow = flags.contains(.maskShift) && (123...126).contains(keyCode)
+    return isCmdA || isShiftArrow
+}
+
 // MARK: - EventTap
 
 final class EventTap: ObservableObject {
@@ -135,15 +144,20 @@ final class EventTap: ObservableObject {
             return myself.handle(proxy: proxy, type: type, event: event)
         }
 
+        let eventMask: CGEventMask =
+            (1 << CGEventType.keyDown.rawValue) |
+            (1 << CGEventType.keyUp.rawValue) |
+            (1 << CGEventType.flagsChanged.rawValue) |
+            (1 << CGEventType.leftMouseDown.rawValue) |
+            (1 << CGEventType.rightMouseDown.rawValue) |
+            (1 << CGEventType.leftMouseDragged.rawValue) |
+            (1 << CGEventType.rightMouseDragged.rawValue)
+
         guard let newTap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: .defaultTap,
-            eventsOfInterest: CGEventMask(
-                (1 << CGEventType.keyDown.rawValue) |
-                (1 << CGEventType.keyUp.rawValue) |
-                (1 << CGEventType.flagsChanged.rawValue)
-            ),
+            eventsOfInterest: eventMask,
             callback: callback,
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
@@ -268,6 +282,15 @@ final class EventTap: ObservableObject {
             return Unmanaged.passRetained(event)
         }
 
+        // Mouse down/drag starts a new editing session (selection, click, etc.).
+        // Reset the engine so stale composing state cannot be applied after the
+        // user selects text with the mouse. Modeled after OpenKey.
+        if type == .leftMouseDown || type == .rightMouseDown ||
+           type == .leftMouseDragged || type == .rightMouseDragged {
+            _engine.reset()
+            return Unmanaged.passRetained(event)
+        }
+
         // Only handle keyDown/keyUp
         guard type == .keyDown || type == .keyUp else {
             return Unmanaged.passRetained(event)
@@ -285,6 +308,13 @@ final class EventTap: ObservableObject {
                 NSLog("[UVieKey] keystroke - keyCode: \(keyCode), composing: '\(composing)', committed: '\(committed)'")
             }
             #endif
+        }
+
+        // Detect text-selection shortcuts. The diff engine tracks text at the
+        // insertion point only; when the user selects text and types over it,
+        // our state becomes invalid, so reset the engine.
+        if type == .keyDown && isSelectionShortcut(keyCode: keyCode, flags: flags) {
+            _engine.reset()
         }
 
         // Pass through modifier combinations (except Option+Backspace which we handle specially)
