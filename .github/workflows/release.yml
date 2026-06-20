@@ -130,9 +130,10 @@ jobs:
           cp include/uvie.h dist/uvie/uvie.h
 
       - name: Create archive
+        shell: pwsh
         run: |
           cd dist
-          zip -r uvie-windows-x86_64.zip uvie
+          Compress-Archive -Path uvie\* -DestinationPath uvie-windows-x86_64.zip
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
