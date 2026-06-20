@@ -27,10 +27,11 @@ impl SyllableValidator for UltraFastViEngine {
     #[inline]
     fn is_valid_vietnamese(&self) -> bool {
         let n = self.buf.len();
-        if n == 0 { return true; }
+        if n == 0 {
+            return true;
+        }
 
-        let (onset_end, nucleus_start, nucleus_end, coda_start) =
-            self.partition_syllable();
+        let (onset_end, nucleus_start, nucleus_end, coda_start) = self.partition_syllable();
 
         if nucleus_start >= n {
             let onset_raw = &self.raw[..n];
@@ -63,10 +64,18 @@ impl SyllableValidator for UltraFastViEngine {
             }
         }
 
-        if !is_legal_onset(onset_raw) { return false; }
-        if !is_legal_nucleus(nuc_slice) { return false; }
-        if !is_legal_coda(coda_slice) { return false; }
-        if !tone_allowed_for_coda(coda_slice, tone) { return false; }
+        if !is_legal_onset(onset_raw) {
+            return false;
+        }
+        if !is_legal_nucleus(nuc_slice) {
+            return false;
+        }
+        if !is_legal_coda(coda_slice) {
+            return false;
+        }
+        if !tone_allowed_for_coda(coda_slice, tone) {
+            return false;
+        }
 
         true
     }
@@ -78,15 +87,14 @@ impl SyllableValidator for UltraFastViEngine {
         let mut onset_end = 0;
         while onset_end < n {
             let s = self.buf.get(onset_end);
-            if self.is_vowel_entry(s) { break; }
+            if self.is_vowel_entry(s) {
+                break;
+            }
             onset_end += 1;
         }
 
         // Special case: `qu` digraph.
-        if onset_end < n
-            && onset_end > 0
-            && self.buf.get(onset_end - 1).base == b'q'
-        {
+        if onset_end < n && onset_end > 0 && self.buf.get(onset_end - 1).base == b'q' {
             let next = self.buf.get(onset_end);
             if next.base == b'u' && next.flags == 0 {
                 onset_end += 1;
@@ -94,15 +102,16 @@ impl SyllableValidator for UltraFastViEngine {
         }
 
         // Special case: `gi` digraph.
-        if onset_end < n
-            && onset_end > 0
-            && self.buf.get(onset_end - 1).base == b'g'
-        {
-            let prev2 = if onset_end >= 2 { self.buf.get(onset_end - 2).base } else { 0 };
+        if onset_end < n && onset_end > 0 && self.buf.get(onset_end - 1).base == b'g' {
+            let prev2 = if onset_end >= 2 {
+                self.buf.get(onset_end - 2).base
+            } else {
+                0
+            };
             if prev2 != b'n' {
                 let next = self.buf.get(onset_end);
-                let has_vowel_after_i = onset_end + 1 < n
-                    && self.is_vowel_entry(self.buf.get(onset_end + 1));
+                let has_vowel_after_i =
+                    onset_end + 1 < n && self.is_vowel_entry(self.buf.get(onset_end + 1));
                 if next.base == b'i' && next.flags == 0 && has_vowel_after_i {
                     onset_end += 1;
                 }
@@ -113,7 +122,9 @@ impl SyllableValidator for UltraFastViEngine {
         let mut nucleus_end = nucleus_start;
         while nucleus_end < n {
             let s = self.buf.get(nucleus_end);
-            if !self.is_vowel_entry(s) { break; }
+            if !self.is_vowel_entry(s) {
+                break;
+            }
             nucleus_end += 1;
         }
 
@@ -135,8 +146,12 @@ impl SyllableValidator for UltraFastViEngine {
     #[inline]
     fn is_vowel_entry(&self, s: &Syl) -> bool {
         let b = s.base;
-        if self.mode.classify[b as usize] & IS_VOWEL != 0 { return true; }
-        if b == b'w' && s.flags & F_HORN != 0 { return true; }
+        if self.mode.classify[b as usize] & IS_VOWEL != 0 {
+            return true;
+        }
+        if b == b'w' && s.flags & F_HORN != 0 {
+            return true;
+        }
         false
     }
 
@@ -184,7 +199,9 @@ impl SyllableValidator for UltraFastViEngine {
 
     #[inline]
     fn is_u_glide(&self, idx: usize) -> bool {
-        if idx == 0 { return false; }
+        if idx == 0 {
+            return false;
+        }
         let prev = self.buf.get(idx - 1);
         prev.base == b'q'
     }

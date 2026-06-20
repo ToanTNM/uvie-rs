@@ -427,7 +427,12 @@ impl SylStructure {
     /// matching the format of `partition_syllable()`.
     #[inline]
     pub fn as_tuple(&self) -> (usize, usize, usize, usize) {
-        (self.onset_end, self.onset_end, self.nucleus_end, self.nucleus_end)
+        (
+            self.onset_end,
+            self.onset_end,
+            self.nucleus_end,
+            self.nucleus_end,
+        )
     }
 }
 

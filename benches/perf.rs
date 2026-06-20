@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use uvie::{InputMethod, UltraFastViEngine};
 use vi::methods::transform_buffer as vi_transform_buffer;
 
@@ -20,7 +20,7 @@ fn bench_uvie_telex(c: &mut Criterion) {
 
     let cases: &[(&str, &str)] = &[
         ("simple", "phoos"),
-        ("sentence", "Tooi ddang gox Tieengs Vieejt " ),
+        ("sentence", "Tooi ddang gox Tieengs Vieejt "),
         ("mixed", "clear free pro "),
         ("uow", "huows"),
         ("cluster", "nghees"),

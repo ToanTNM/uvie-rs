@@ -79,7 +79,9 @@ fn write_output(out: &str, out_buf: *mut c_char, out_len: usize) -> usize {
             *out_buf.add(write_len) = 0;
         }
     } else {
-        unsafe { *out_buf = 0; }
+        unsafe {
+            *out_buf = 0;
+        }
     }
     write_len
 }
@@ -96,7 +98,9 @@ pub extern "C" fn uvie_engine_new() -> *mut UvieEngine {
 #[unsafe(no_mangle)]
 pub extern "C" fn uvie_engine_free(engine: *mut UvieEngine) {
     if !engine.is_null() {
-        unsafe { drop(Box::from_raw(engine)); }
+        unsafe {
+            drop(Box::from_raw(engine));
+        }
     }
 }
 

@@ -665,7 +665,6 @@ fn no_bubble_across_consonants() {
     // subsequent ork continues as passthrough → "work" (like "dd"→"đ", "ddd"→"dd")
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "wwork"), "work");
-    
 
     // Free-style across consonants without tone: nene -> nên
     let mut e = UltraFastViEngine::new();
@@ -903,7 +902,9 @@ fn diff_triple_cancel_preserves_trailing_chars() {
     let mut e = UltraFastViEngine::new();
 
     // nee → nê
-    e.feed_diff('n'); e.feed_diff('e'); e.feed_diff('e');
+    e.feed_diff('n');
+    e.feed_diff('e');
+    e.feed_diff('e');
     assert_eq!(e.current_composing_diff(), "nê");
 
     // neee → nee (triple cancel, 3rd 'e' skipped)
@@ -927,8 +928,8 @@ fn diff_triple_cancel_preserves_trailing_chars() {
 
 #[cfg(test)]
 mod vcv_tests {
-    use crate::diff::Diffable;
     use crate::UltraFastViEngine;
+    use crate::diff::Diffable;
 
     fn type_diff(e: &mut UltraFastViEngine, s: &str) -> String {
         let mut screen = String::new();
@@ -1030,27 +1031,67 @@ fn test_vcv_boundary_auto_commit() {
 
         // Type 'n','e','e' → composing = "nê"
         e.feed_diff('n');
-        assert_eq!(e.current_composing_diff(), "n", "after 'n': composing should be 'n'");
+        assert_eq!(
+            e.current_composing_diff(),
+            "n",
+            "after 'n': composing should be 'n'"
+        );
         e.feed_diff('e');
-        assert_eq!(e.current_composing_diff(), "ne", "after 'ne': composing should be 'ne'");
+        assert_eq!(
+            e.current_composing_diff(),
+            "ne",
+            "after 'ne': composing should be 'ne'"
+        );
         e.feed_diff('e');
-        assert_eq!(e.current_composing_diff(), "nê", "after 'nee': composing should be 'nê'");
-        assert_eq!(e.committed_text_diff(), "", "after 'nee': committed should be empty");
+        assert_eq!(
+            e.current_composing_diff(),
+            "nê",
+            "after 'nee': composing should be 'nê'"
+        );
+        assert_eq!(
+            e.committed_text_diff(),
+            "",
+            "after 'nee': committed should be empty"
+        );
 
         // Type 'b' → composing = "nêb" (consonant appended, not yet invalid)
         e.feed_diff('b');
-        assert_eq!(e.current_composing_diff(), "nêb", "after 'neeb': composing should be 'nêb'");
-        assert_eq!(e.committed_text_diff(), "", "after 'neeb': committed should still be empty");
+        assert_eq!(
+            e.current_composing_diff(),
+            "nêb",
+            "after 'neeb': composing should be 'nêb'"
+        );
+        assert_eq!(
+            e.committed_text_diff(),
+            "",
+            "after 'neeb': committed should still be empty"
+        );
 
         // Type 'o' → V-C-V boundary detected ('nêbo' is invalid Vietnamese)
         e.feed_diff('o');
-        assert_eq!(e.current_composing_diff(), "bo", "after 'neebo': composing should be 'bo'");
-        assert_eq!(e.committed_text_diff(), "nê", "after 'neebo': committed should equal 'nê' (exact match)");
+        assert_eq!(
+            e.current_composing_diff(),
+            "bo",
+            "after 'neebo': composing should be 'bo'"
+        );
+        assert_eq!(
+            e.committed_text_diff(),
+            "nê",
+            "after 'neebo': committed should equal 'nê' (exact match)"
+        );
 
         // Type second 'o' → composing = "bô"
         e.feed_diff('o');
-        assert_eq!(e.current_composing_diff(), "bô", "after 'neeboo': composing should be 'bô'");
-        assert_eq!(e.committed_text_diff(), "nê", "after 'neeboo': committed should still be 'nê'");
+        assert_eq!(
+            e.current_composing_diff(),
+            "bô",
+            "after 'neeboo': composing should be 'bô'"
+        );
+        assert_eq!(
+            e.committed_text_diff(),
+            "nê",
+            "after 'neeboo': committed should still be 'nê'"
+        );
     }
 
     // --- SECTION 2: naaboo pattern (aa → â) ---
@@ -1060,20 +1101,52 @@ fn test_vcv_boundary_auto_commit() {
         e.feed_diff('n');
         e.feed_diff('a');
         e.feed_diff('a');
-        assert_eq!(e.current_composing_diff(), "nâ", "after 'naa': composing should be 'nâ'");
-        assert_eq!(e.committed_text_diff(), "", "after 'naa': committed should be empty");
+        assert_eq!(
+            e.current_composing_diff(),
+            "nâ",
+            "after 'naa': composing should be 'nâ'"
+        );
+        assert_eq!(
+            e.committed_text_diff(),
+            "",
+            "after 'naa': committed should be empty"
+        );
 
         e.feed_diff('b');
-        assert_eq!(e.current_composing_diff(), "nâb", "after 'naab': composing should be 'nâb'");
-        assert_eq!(e.committed_text_diff(), "", "after 'naab': committed should be empty");
+        assert_eq!(
+            e.current_composing_diff(),
+            "nâb",
+            "after 'naab': composing should be 'nâb'"
+        );
+        assert_eq!(
+            e.committed_text_diff(),
+            "",
+            "after 'naab': committed should be empty"
+        );
 
         e.feed_diff('o');
-        assert_eq!(e.current_composing_diff(), "bo", "after 'naabo': composing should be 'bo'");
-        assert_eq!(e.committed_text_diff(), "nâ", "after 'naabo': committed should equal 'nâ'");
+        assert_eq!(
+            e.current_composing_diff(),
+            "bo",
+            "after 'naabo': composing should be 'bo'"
+        );
+        assert_eq!(
+            e.committed_text_diff(),
+            "nâ",
+            "after 'naabo': committed should equal 'nâ'"
+        );
 
         e.feed_diff('o');
-        assert_eq!(e.current_composing_diff(), "bô", "after 'naaboo': composing should be 'bô'");
-        assert_eq!(e.committed_text_diff(), "nâ", "after 'naaboo': committed should still be 'nâ'");
+        assert_eq!(
+            e.current_composing_diff(),
+            "bô",
+            "after 'naaboo': composing should be 'bô'"
+        );
+        assert_eq!(
+            e.committed_text_diff(),
+            "nâ",
+            "after 'naaboo': committed should still be 'nâ'"
+        );
     }
 
     // --- SECTION 3: toocaa pattern (oo → ô, aa → â) ---
@@ -1083,50 +1156,126 @@ fn test_vcv_boundary_auto_commit() {
         e.feed_diff('t');
         e.feed_diff('o');
         e.feed_diff('o');
-        assert_eq!(e.current_composing_diff(), "tô", "after 'too': composing should be 'tô'");
-        assert_eq!(e.committed_text_diff(), "", "after 'too': committed should be empty");
+        assert_eq!(
+            e.current_composing_diff(),
+            "tô",
+            "after 'too': composing should be 'tô'"
+        );
+        assert_eq!(
+            e.committed_text_diff(),
+            "",
+            "after 'too': committed should be empty"
+        );
 
         e.feed_diff('c');
-        assert_eq!(e.current_composing_diff(), "tôc", "after 'tooc': composing should be 'tôc'");
-        assert_eq!(e.committed_text_diff(), "", "after 'tooc': committed should be empty");
+        assert_eq!(
+            e.current_composing_diff(),
+            "tôc",
+            "after 'tooc': composing should be 'tôc'"
+        );
+        assert_eq!(
+            e.committed_text_diff(),
+            "",
+            "after 'tooc': committed should be empty"
+        );
 
         e.feed_diff('a');
-        assert_eq!(e.current_composing_diff(), "ca", "after 'tooca': composing should be 'ca'");
-        assert_eq!(e.committed_text_diff(), "tô", "after 'tooca': committed should equal 'tô'");
+        assert_eq!(
+            e.current_composing_diff(),
+            "ca",
+            "after 'tooca': composing should be 'ca'"
+        );
+        assert_eq!(
+            e.committed_text_diff(),
+            "tô",
+            "after 'tooca': committed should equal 'tô'"
+        );
 
         e.feed_diff('a');
-        assert_eq!(e.current_composing_diff(), "câ", "after 'toocaa': composing should be 'câ'");
-        assert_eq!(e.committed_text_diff(), "tô", "after 'toocaa': committed should still be 'tô'");
+        assert_eq!(
+            e.current_composing_diff(),
+            "câ",
+            "after 'toocaa': composing should be 'câ'"
+        );
+        assert_eq!(
+            e.committed_text_diff(),
+            "tô",
+            "after 'toocaa': committed should still be 'tô'"
+        );
     }
 
     // --- SECTION 4: English passthrough (no spurious commit) ---
     {
         let mut e = UltraFastViEngine::new();
-        for ch in "blob".chars() { e.feed_diff(ch); }
-        assert_eq!(e.current_composing_diff(), "blob", "after 'blob': should be raw passthrough");
-        assert_eq!(e.committed_text_diff(), "", "after 'blob': committed should be empty");
+        for ch in "blob".chars() {
+            e.feed_diff(ch);
+        }
+        assert_eq!(
+            e.current_composing_diff(),
+            "blob",
+            "after 'blob': should be raw passthrough"
+        );
+        assert_eq!(
+            e.committed_text_diff(),
+            "",
+            "after 'blob': committed should be empty"
+        );
 
         let mut e2 = UltraFastViEngine::new();
-        for ch in "banana".chars() { e2.feed_diff(ch); }
-        assert_eq!(e2.current_composing_diff(), "na", "after 'banana': composing should be 'na'");
-        assert_eq!(e2.committed_text_diff(), "bân", "after 'banana': committed should be 'bân'");
+        for ch in "banana".chars() {
+            e2.feed_diff(ch);
+        }
+        assert_eq!(
+            e2.current_composing_diff(),
+            "na",
+            "after 'banana': composing should be 'na'"
+        );
+        assert_eq!(
+            e2.committed_text_diff(),
+            "bân",
+            "after 'banana': committed should be 'bân'"
+        );
     }
 
     // --- SECTION 5: Multi-syllable accumulation scenarios ---
     {
         let mut e = UltraFastViEngine::new();
 
-        for ch in "neeboo".chars() { e.feed_diff(ch); }
-        assert_eq!(e.current_composing_diff(), "bô", "after first word: composing should be 'bô'");
-        assert_eq!(e.committed_text_diff(), "nê", "after first word: committed should be 'nê'");
+        for ch in "neeboo".chars() {
+            e.feed_diff(ch);
+        }
+        assert_eq!(
+            e.current_composing_diff(),
+            "bô",
+            "after first word: composing should be 'bô'"
+        );
+        assert_eq!(
+            e.committed_text_diff(),
+            "nê",
+            "after first word: committed should be 'nê'"
+        );
 
         e.commit_diff();
-        assert_eq!(e.current_composing_diff(), "", "after commit: composing should be empty");
+        assert_eq!(
+            e.current_composing_diff(),
+            "",
+            "after commit: composing should be empty"
+        );
 
-        for ch in "naaboo".chars() { e.feed_diff(ch); }
-        assert_eq!(e.current_composing_diff(), "bô", "after second word: composing should be 'bô'");
+        for ch in "naaboo".chars() {
+            e.feed_diff(ch);
+        }
+        assert_eq!(
+            e.current_composing_diff(),
+            "bô",
+            "after second word: composing should be 'bô'"
+        );
         // committed_text accumulates across auto-commits: "nê" + "nâ" = "nênâ"
-        assert_eq!(e.committed_text_diff(), "nênâ", "after second word: committed should accumulate both words");
+        assert_eq!(
+            e.committed_text_diff(),
+            "nênâ",
+            "after second word: committed should accumulate both words"
+        );
     }
 }
 
@@ -1137,28 +1286,39 @@ fn test_telex_word_passthrough() {
     // syllable and falling back to raw passthrough.
     let mut e = UltraFastViEngine::new();
     let out = type_seq(&mut e, "telex");
-    assert_eq!(out, "telex", "'telex' should pass through as English, not be mangled to Vietnamese");
+    assert_eq!(
+        out, "telex",
+        "'telex' should pass through as English, not be mangled to Vietnamese"
+    );
 }
 
 #[test]
 fn test_expect_word_passthrough() {
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "expect"), "expect",
-        "English word 'expect' should pass through, not become Vietnamese");
+    assert_eq!(
+        type_seq(&mut e, "expect"),
+        "expect",
+        "English word 'expect' should pass through, not become Vietnamese"
+    );
 }
 
 #[test]
 fn test_look_should_cancel() {
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "loook"), "look",
-        "Double 'o' should cancel, leaving single 'o'");
+    assert_eq!(
+        type_seq(&mut e, "loook"),
+        "look",
+        "Double 'o' should cancel, leaving single 'o'"
+    );
 }
 
 #[test]
 fn test_backspace_thajta_sequence() {
     let mut e = UltraFastViEngine::new();
     // type thajta → thật
-    for ch in "thajta".chars() { e.feed(ch); }
+    for ch in "thajta".chars() {
+        e.feed(ch);
+    }
     assert_eq!(e.current_composing(), "thật");
     // backspace once → removes last raw 'a', back to "thạt"
     e.backspace();
@@ -1172,26 +1332,40 @@ fn test_backspace_thajta_sequence() {
     // "thajtat" = raw passthrough because coda "tt" is invalid.
     e.feed('a');
     e.feed('t');
-    assert_eq!(e.current_composing(), "thajtat", "thajt+a+t → passthrough (tt coda invalid)");
+    assert_eq!(
+        e.current_composing(),
+        "thajtat",
+        "thajt+a+t → passthrough (tt coda invalid)"
+    );
 }
 
 #[test]
 fn debug_gif_inner() {
     let mut e = UltraFastViEngine::new();
-    e.feed('g'); println!("after g: {:?}", e.current_composing());
-    e.feed('i'); println!("after i: {:?}", e.current_composing());
-    e.feed('f'); println!("after f: {:?}", e.current_composing());
+    e.feed('g');
+    println!("after g: {:?}", e.current_composing());
+    e.feed('i');
+    println!("after i: {:?}", e.current_composing());
+    e.feed('f');
+    println!("after f: {:?}", e.current_composing());
     // also test tim
     let mut e2 = UltraFastViEngine::new();
-    e2.feed('t'); e2.feed('i'); e2.feed('m');
+    e2.feed('t');
+    e2.feed('i');
+    e2.feed('m');
     println!("tim: {:?}", e2.current_composing());
-    // and timf  
+    // and timf
     let mut e3 = UltraFastViEngine::new();
-    e3.feed('t'); e3.feed('i'); e3.feed('m'); e3.feed('f');
+    e3.feed('t');
+    e3.feed('i');
+    e3.feed('m');
+    e3.feed('f');
     println!("timf: {:?}", e3.current_composing());
     // gif with assertion
     let mut e4 = UltraFastViEngine::new();
-    for ch in "gif".chars() { e4.feed(ch); }
+    for ch in "gif".chars() {
+        e4.feed(ch);
+    }
     assert_eq!(e4.current_composing(), "gì", "gif should produce gì");
 }
 
@@ -1212,8 +1386,16 @@ fn test_vcv_backspace_retype_composes_correctly() {
         screen.push_str(suffix);
     }
     assert_eq!(screen, "nêbo", "after neebo: screen should show 'nêbo'");
-    assert_eq!(e.committed_text_diff(), "nê", "after neebo: committed should be 'nê'");
-    assert_eq!(e.current_composing_diff(), "bo", "after neebo: composing should be 'bo'");
+    assert_eq!(
+        e.committed_text_diff(),
+        "nê",
+        "after neebo: committed should be 'nê'"
+    );
+    assert_eq!(
+        e.current_composing_diff(),
+        "bo",
+        "after neebo: composing should be 'bo'"
+    );
 
     // Backspace once - should remove 'o'
     let (bs, suffix) = e.backspace_diff();
@@ -1230,8 +1412,12 @@ fn test_vcv_backspace_retype_composes_correctly() {
 
     // The key assertion: 'a' should be composed, not raw
     assert!(
-        screen.ends_with("ba") || screen.ends_with("bá") || screen.ends_with("bà") ||
-        screen.ends_with("bả") || screen.ends_with("bã") || screen.ends_with("bạ"),
+        screen.ends_with("ba")
+            || screen.ends_with("bá")
+            || screen.ends_with("bà")
+            || screen.ends_with("bả")
+            || screen.ends_with("bã")
+            || screen.ends_with("bạ"),
         "after typing 'a' following backspace, screen should show composed Vietnamese, got: {}",
         screen
     );
@@ -1269,7 +1455,11 @@ fn test_vcv_multiple_backspace_then_retype() {
     }
 
     // Verify state is clean
-    assert_eq!(e.current_composing_diff(), "", "composing should be empty after clearing");
+    assert_eq!(
+        e.current_composing_diff(),
+        "",
+        "composing should be empty after clearing"
+    );
 
     // Type 'a' - should start fresh composition
     let (bs, suffix) = e.feed_diff('a');
@@ -1286,7 +1476,11 @@ fn test_vcv_multiple_backspace_then_retype() {
     screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
     screen.push_str(suffix);
 
-    assert!(screen.ends_with('â'), "double 'a' should form 'â', got: {}", screen);
+    assert!(
+        screen.ends_with('â'),
+        "double 'a' should form 'â', got: {}",
+        screen
+    );
 }
 
 #[test]
@@ -1305,7 +1499,7 @@ fn debug_gif_step_by_step() {
 fn debug_gif_via_is_valid() {
     // Check: does "gi" validate as Vietnamese?
     // onset = [g], nucleus = [i], coda = []
-    use crate::tables::{is_legal_onset, is_legal_nucleus, is_legal_coda};
+    use crate::tables::{is_legal_coda, is_legal_nucleus, is_legal_onset};
     assert!(is_legal_onset(b"g"), "g is legal onset");
     assert!(is_legal_nucleus(&['i']), "i is legal nucleus");
     assert!(is_legal_coda(b""), "empty coda is legal");
@@ -1315,11 +1509,17 @@ fn debug_gif_via_is_valid() {
 #[test]
 fn debug_timff() {
     let mut e = UltraFastViEngine::new();
-    for ch in "timf".chars() { e.feed(ch); }
+    for ch in "timf".chars() {
+        e.feed(ch);
+    }
     assert_eq!(e.current_composing(), "tìm", "timf = tìm");
     e.feed('f');
     // Double-cancel: tone removed, first 'f' stays as literal → "timf" passthrough
-    assert_eq!(e.current_composing(), "timf", "timff = double cancel = timf (f as literal)");
+    assert_eq!(
+        e.current_composing(),
+        "timf",
+        "timff = double cancel = timf (f as literal)"
+    );
 }
 
 #[test]
@@ -1328,44 +1528,52 @@ fn debug_phat_sequences() {
     // "phas" -> "phás" (s=sắc), "phat" -> "phất"? No, t is coda not tone.
     // "phast" = ph+a+s(tone)+t(coda) -> "phást"
     let cases = [
-        ("phat",  "phát"),   // ph+a+t where t could be coda... "phát"?
-        ("phas",  "phás"),   // ph+a+s(sắc) = "phás"  
+        ("phat", "phát"),    // ph+a+t where t could be coda... "phát"?
+        ("phas", "phás"),    // ph+a+s(sắc) = "phás"
         ("phast", "phást"),  // ph+a+s(sắc)+t(coda) = "phást"
-        ("phasst","phast"),  // ss cancel -> "phast" passthrough
-        ("phat",  "phát"),   // is "phat" valid Vietnamese? t is coda, no tone
+        ("phasst", "phast"), // ss cancel -> "phast" passthrough
+        ("phat", "phát"),    // is "phat" valid Vietnamese? t is coda, no tone
     ];
     for (input, expected) in &cases {
         let mut e = UltraFastViEngine::new();
         let out = type_seq(&mut e, input);
-        println!("{:?} -> {:?} (expected {:?}) {}", input, out, expected, if out == *expected { "✓" } else { "✗" });
+        println!(
+            "{:?} -> {:?} (expected {:?}) {}",
+            input,
+            out,
+            expected,
+            if out == *expected { "✓" } else { "✗" }
+        );
     }
 }
 
 #[test]
 fn debug_when_phast_passthrough() {
     // Find scenarios where phast does NOT give phát
-    
+
     // Scenario: what if raw buffer already has data from before?
     // E.g. "aphast" - a previous 'a' still in buffer
     let cases = [
-        ("aphast",   "aphast"),  // 'a' left over → "aphast" passthrough?
-        ("phastx",   "phátx"),   // extra char after
-        ("nphast",   "nphast"),  // consonant before
-        (" phast",   " phát"),   // space then phast (space resets)
+        ("aphast", "aphast"), // 'a' left over → "aphast" passthrough?
+        ("phastx", "phátx"),  // extra char after
+        ("nphast", "nphast"), // consonant before
+        (" phast", " phát"),  // space then phast (space resets)
     ];
     for (input, expected) in &cases {
         let mut e = UltraFastViEngine::new();
         let out = type_seq(&mut e, input);
         println!("{:?} -> {:?} (expected {:?})", input, out, expected);
     }
-    
+
     // What if the engine has a previous partial state?
     // E.g. typed "phat" got "phat", then BS all, then type "phast"
     let mut e = UltraFastViEngine::new();
     type_seq(&mut e, "phat"); // "phat" passthrough? Or valid? 
     println!("phat alone: {:?}", e.current_composing());
     // Now backspace 4 times
-    for _i in 0..4 { e.backspace(); }
+    for _i in 0..4 {
+        e.backspace();
+    }
     println!("phat+4BS: {:?}", e.current_composing());
     // Now type phast
     let out = type_seq(&mut e, "phast");
@@ -1376,18 +1584,23 @@ fn debug_when_phast_passthrough() {
 fn test_ua_diphthong_tone() {
     // uâ diphthong: tone should be on â (index 1), not u (index 0)
     // chuẩn = ch + uâ + n + nặng (ẩ)
-    // tuần = t + uâ + n + huyền (ầ)  
+    // tuần = t + uâ + n + huyền (ầ)
     // suất = s + uâ + t + sắc (ấ)
     let cases = [
-        ("chuanar", "chuẩn"),  // chuanar: u+aa→uâ, r=nặng, n coda
-        ("tuaanf",  "tuần"),   // tuânf: t+u+aa→tuâ+n, f=huyền 
-        ("suas",    "suất"),   // suat+s: wait, "suas" = s+u+a+s? no...
+        ("chuanar", "chuẩn"), // chuanar: u+aa→uâ, r=nặng, n coda
+        ("tuaanf", "tuần"),   // tuânf: t+u+aa→tuâ+n, f=huyền
+        ("suas", "suất"),     // suat+s: wait, "suas" = s+u+a+s? no...
     ];
     for (input, expected) in &cases {
         let mut e = UltraFastViEngine::new();
         let out = type_seq(&mut e, input);
-        println!("{:?} -> {:?} (expected {:?}) {}", input, out, expected,
-            if out == *expected { "✓" } else { "✗" });
+        println!(
+            "{:?} -> {:?} (expected {:?}) {}",
+            input,
+            out,
+            expected,
+            if out == *expected { "✓" } else { "✗" }
+        );
     }
 }
 
@@ -1442,24 +1655,34 @@ fn debug_ww_behavior() {
 #[test]
 fn test_double_w_cancel() {
     // ww → "w" (cancel ư, render passthrough with raw="w")
-    let mut e = UltraFastViEngine::new(); assert_eq!(type_seq(&mut e, "ww"), "w");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ww"), "w");
     // wwork → "work"
-    let mut e = UltraFastViEngine::new(); assert_eq!(type_seq(&mut e, "wwork"), "work");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "wwork"), "work");
     // www → "ww" (triple: ww cancel → "w", 3rd w makes "ww")
-    let mut e = UltraFastViEngine::new(); assert_eq!(type_seq(&mut e, "www"), "ww");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "www"), "ww");
     // Regular ow → ơ still works
-    let mut e = UltraFastViEngine::new(); assert_eq!(type_seq(&mut e, "ow"), "ơ");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ow"), "ơ");
     // Regular uw → ư still works
-    let mut e = UltraFastViEngine::new(); assert_eq!(type_seq(&mut e, "uw"), "ư");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "uw"), "ư");
     // oww → "ow" (cancel)
-    let mut e = UltraFastViEngine::new(); assert_eq!(type_seq(&mut e, "oww"), "ow");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "oww"), "ow");
 
     // BUG: honw should become "hơn" (w modifies o to ơ, n remains coda)
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "honw"), "hơn", "honw should produce hơn");
 
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "hoawjc"), "hoặc", "hoawjc should produce hoặc");
+    assert_eq!(
+        type_seq(&mut e, "hoawjc"),
+        "hoặc",
+        "hoawjc should produce hoặc"
+    );
 
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "fix"), "fix", "fix should produce fix");
@@ -1475,7 +1698,11 @@ fn quick_telex_english_word_fix() {
     // the 'x' after 'i' might be treated as tone key instead of literal
     // Current: produces "fĩ" (f + i with hỏi tone)
     // Expected: "fix" (literal passthrough since "fi" is not valid Vietnamese)
-    assert_eq!(result, "fix", "Quick Telex: fix should produce fix, got {}", result);
+    assert_eq!(
+        result, "fix",
+        "Quick Telex: fix should produce fix, got {}",
+        result
+    );
 }
 
 #[test]
@@ -1484,7 +1711,11 @@ fn quick_telex_cuoois_produces_cuoi() {
     // Requires nucleus "uôi" entry in tables.rs
     let mut e = UltraFastViEngine::new();
     e.set_quick_telex(true);
-    assert_eq!(type_seq(&mut e, "cuoois"), "cuối", "Quick Telex: cuoois should produce cuối");
+    assert_eq!(
+        type_seq(&mut e, "cuoois"),
+        "cuối",
+        "Quick Telex: cuoois should produce cuối"
+    );
 }
 
 #[test]
@@ -1495,8 +1726,11 @@ fn quick_telex_cuosi_produces_cuoi() {
     e.set_quick_telex(true);
     let result = type_seq(&mut e, "cuôsi");
     // Document current behavior - may need tone handler fix
-    assert!(result == "cuối" || result == "cuôsi",
-            "cuôsi should produce cuối ideally, got {}", result);
+    assert!(
+        result == "cuối" || result == "cuôsi",
+        "cuôsi should produce cuối ideally, got {}",
+        result
+    );
 }
 
 // ========== UUW BUG FIX TESTS ==========
@@ -1514,8 +1748,11 @@ fn test_uuw_with_tone() {
     let mut e = UltraFastViEngine::new();
     let result = type_seq(&mut e, "uuws");
     // Current: produces "ứu" (ưu with sắc tone)
-    assert!(result == "ứu" || result == "ưus",
-            "uuws should produce ứu or ưus, got {}", result);
+    assert!(
+        result == "ứu" || result == "ưus",
+        "uuws should produce ứu or ưus, got {}",
+        result
+    );
 }
 
 #[test]
@@ -1534,8 +1771,11 @@ fn test_nucleus_au_breve() {
     let mut e = UltraFastViEngine::new();
     let result = type_seq(&mut e, "tawuf");
     // Document actual behavior - tone placement on ău nucleus
-    assert!(result == "tầu" || result == "tằu" || result == "tăuf",
-            "tawuf should produce tầu or similar, got {}", result);
+    assert!(
+        result == "tầu" || result == "tằu" || result == "tăuf",
+        "tawuf should produce tầu or similar, got {}",
+        result
+    );
 }
 
 #[test]
@@ -1649,7 +1889,10 @@ fn repro_ghost_character_log() {
         let sc: Vec<char> = screen.chars().collect();
         screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
         screen.push_str(&suffix);
-        println!("feed '{}' -> bs={} suffix='{}' screen='{}' diff_committed='{}' core_out='{}'", ch, bs, suffix, screen, committed, core_out);
+        println!(
+            "feed '{}' -> bs={} suffix='{}' screen='{}' diff_committed='{}' core_out='{}'",
+            ch, bs, suffix, screen, committed, core_out
+        );
     }
     for _ in 0..2 {
         let (bs, suffix) = e.backspace_diff();
@@ -1659,7 +1902,10 @@ fn repro_ghost_character_log() {
         let sc: Vec<char> = screen.chars().collect();
         screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
         screen.push_str(&suffix);
-        println!("backspace -> bs={} suffix='{}' screen='{}' diff_committed='{}' core_out='{}'", bs, suffix, screen, committed, core_out);
+        println!(
+            "backspace -> bs={} suffix='{}' screen='{}' diff_committed='{}' core_out='{}'",
+            bs, suffix, screen, committed, core_out
+        );
     }
     for ch in "assa".chars() {
         let (bs, suffix) = e.feed_diff(ch);
@@ -1669,7 +1915,10 @@ fn repro_ghost_character_log() {
         let sc: Vec<char> = screen.chars().collect();
         screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
         screen.push_str(&suffix);
-        println!("feed '{}' -> bs={} suffix='{}' screen='{}' diff_committed='{}' core_out='{}'", ch, bs, suffix, screen, committed, core_out);
+        println!(
+            "feed '{}' -> bs={} suffix='{}' screen='{}' diff_committed='{}' core_out='{}'",
+            ch, bs, suffix, screen, committed, core_out
+        );
     }
 }
 
@@ -1692,7 +1941,8 @@ fn syl_structure_simple_consonant_vowel() {
 #[test]
 fn syl_structure_digraph_onset() {
     let mut e = UltraFastViEngine::new();
-    e.feed('t'); e.feed('h');
+    e.feed('t');
+    e.feed('h');
     assert_eq!(e.syl_structure().onset_kind, OnsetKind::Digraph(b't', b'h'));
     assert_eq!(e.syl_structure().nucleus_kind, NucleusKind::None);
 
@@ -1711,7 +1961,10 @@ fn syl_structure_diphthong_nucleus() {
     // circumflex, keeping nucleus as 1 slot. Actually the buf may have 2 entries
     // for 'o' and 'o' but the second one becomes a modifier... Let's just check
     // the raw partition result:
-    assert!(matches!(e.syl_structure().nucleus_kind, NucleusKind::Single | NucleusKind::Diphthong));
+    assert!(matches!(
+        e.syl_structure().nucleus_kind,
+        NucleusKind::Single | NucleusKind::Diphthong
+    ));
 }
 
 #[test]
@@ -1727,7 +1980,9 @@ fn syl_structure_no_onset() {
 #[test]
 fn syl_structure_trigraph_ngh() {
     let mut e = UltraFastViEngine::new();
-    e.feed('n'); e.feed('g'); e.feed('h');
+    e.feed('n');
+    e.feed('g');
+    e.feed('h');
     assert_eq!(e.syl_structure().onset_kind, OnsetKind::Trigraph);
     assert_eq!(e.syl_structure().onset_end, 3);
 
@@ -1890,32 +2145,42 @@ fn test_special_nuclei_tone_placement() {
     let result = type_seq(&mut e, "thuongs");
     // Engine produces "thúong" - tone on first vowel, w modifies later
     // This documents current behavior; may need nucleus table fix for "thương"
-    assert!(result == "thúong" || result == "thương",
-            "thuongs should produce thương ideally, got {}", result);
+    assert!(
+        result == "thúong" || result == "thương",
+        "thuongs should produce thương ideally, got {}",
+        result
+    );
 
     // uô formation: th + u + o + w modifies first vowel (ư) not second
     // thuocws → thước (w applies to u → ư, then tone s on ư)
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "thuocws"), "thước", "thuocws should produce thước");
+    assert_eq!(
+        type_seq(&mut e, "thuocws"),
+        "thước",
+        "thuocws should produce thước"
+    );
 
     // oă formation: o + a + w → oă, then ng coda, then x tone
     // Tone placement depends on nucleus table definition
     let mut e = UltraFastViEngine::new();
     let result = type_seq(&mut e, "hoangx");
     // Document actual behavior: tone applies to first vowel in nucleus
-    assert!(result == "hoãng" || result == "hoàng",
-            "hoangx produced {}, expected hoãng or hoàng", result);
+    assert!(
+        result == "hoãng" || result == "hoàng",
+        "hoangx produced {}, expected hoãng or hoàng",
+        result
+    );
 }
 
 #[test]
 fn test_qu_i_glide() {
     // qu + i (quí) - i is treated as nucleus
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "quis"), "quí");       // qu + i + sắc = quí
+    assert_eq!(type_seq(&mut e, "quis"), "quí"); // qu + i + sắc = quí
 
     // qu + y (quý) - y is treated as nucleus
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "quys"), "quý");        // qu + y + sắc = quý
+    assert_eq!(type_seq(&mut e, "quys"), "quý"); // qu + y + sắc = quý
 }
 
 #[test]
