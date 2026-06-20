@@ -194,7 +194,7 @@ feed_diff(key):
 
 ## FFI / Swift Integration
 
-The Rust library compiles to `staticlib` + `cdylib`. The Swift macOS app (`UVieKey/`) links against `libuvie.a` and calls the C API:
+The Rust library compiles to `staticlib` + `cdylib`. The Swift macOS app ([UVieKey](https://github.com/thuupx/UVieKey)) links against `libuvie.a` and calls the C API:
 
 - `uvie_engine_new()` / `uvie_engine_free()` - lifecycle
 - `uvie_feed(engine, key, &bs, suffix, suffix_len)` - returns backspace count and writes suffix

@@ -7,7 +7,8 @@ fn main() {
         return;
     }
 
-    let crate_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"));
+    let crate_dir =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"));
     let config = cbindgen::Config::from_root_or_default(&crate_dir);
 
     let output = crate_dir.join("include").join("uvie.h");
@@ -30,5 +31,4 @@ fn main() {
             println!("cargo:warning=cbindgen failed to generate header: {e}");
         }
     }
-
 }

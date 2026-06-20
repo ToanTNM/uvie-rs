@@ -2,8 +2,8 @@
 
 use crate::engine::UltraFastViEngine;
 use crate::modes::{IS_MODIFIER, IS_TONE_KEY, IS_VOWEL};
-use crate::syllable::{F_CIRCUMFLEX, F_CAPS, F_LITERAL, Syl};
 use crate::modifier::ModifierHandler;
+use crate::syllable::{F_CAPS, F_CIRCUMFLEX, F_LITERAL, Syl};
 use crate::tone_handler::ToneHandler;
 use crate::validation::SyllableValidator;
 
@@ -50,7 +50,9 @@ impl Composable for UltraFastViEngine {
                         let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
                         self.buf.set(target_idx, reverted);
                         self.buf.push(Syl::literal(b, caps));
-                        if self.raw_len > 0 { self.raw_len -= 1; }
+                        if self.raw_len > 0 {
+                            self.raw_len -= 1;
+                        }
                         self.mark_all_literal();
                         return;
                     }
@@ -85,7 +87,9 @@ impl Composable for UltraFastViEngine {
 
         self.out_buf.clear();
         let n = self.buf.len();
-        if n == 0 { return; }
+        if n == 0 {
+            return;
+        }
 
         let has_literal = (0..n).any(|i| self.buf.get(i).flags & F_LITERAL != 0);
 
@@ -118,11 +122,7 @@ impl Composable for UltraFastViEngine {
                 && self.buf.get(buf_idx).base == b'd'
                 && self.buf.get(buf_idx).flags & F_LITERAL == 0
                 && self.buf.get(buf_idx).flags & crate::syllable::F_HORN != 0;
-            if is_dh
-                && b == b'd'
-                && raw_idx + 1 < self.raw_len
-                && self.raw[raw_idx + 1] == b'd'
-            {
+            if is_dh && b == b'd' && raw_idx + 1 < self.raw_len && self.raw[raw_idx + 1] == b'd' {
                 let _ = self.out_buf.push('đ');
                 raw_idx += 2;
                 buf_idx += 1;

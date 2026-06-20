@@ -4,9 +4,9 @@
 //! (backspace_count, suffix_to_type) instructions for each keystroke.
 
 use crate::buffers::{CharVec, OutBuffer, new_out_buffer};
+use crate::composing::Composable;
 use crate::engine::UltraFastViEngine;
 use crate::modes::{IS_TONE_KEY, Mode};
-use crate::composing::Composable;
 
 /// Diff-mode state: tracks what's on screen vs what the engine produced.
 pub struct DiffState {
@@ -117,7 +117,8 @@ impl Diffable for UltraFastViEngine {
         let raw_len_after = self.raw_len;
 
         // Double-tone-cancel detection.
-        let double_cancel_fired = raw_len_after == raw_len_before && !self.diff.raw_chars.is_empty();
+        let double_cancel_fired =
+            raw_len_after == raw_len_before && !self.diff.raw_chars.is_empty();
         if double_cancel_fired {
             let last_idx = self.diff.raw_chars.len() - 1;
             if last_idx >= 1 {
@@ -150,7 +151,10 @@ impl Diffable for UltraFastViEngine {
         let is_optimistic = is_now_raw
             && !self.diff.last_valid_out.is_empty()
             && !ch_is_tone
-            && Self::is_single_consonant_appended_slice(&self.diff.raw_chars, self.diff.last_valid_raw_len)
+            && Self::is_single_consonant_appended_slice(
+                &self.diff.raw_chars,
+                self.diff.last_valid_raw_len,
+            )
             && self.diff.last_valid_coda_start == self.diff.last_valid_raw_len;
 
         let display_composed = if is_optimistic {
@@ -173,7 +177,9 @@ impl Diffable for UltraFastViEngine {
 
         // V-C-V boundary detection.
         let ch_is_vowel = Self::is_ascii_vowel(ch as u8);
-        if is_now_raw && ch_is_vowel && !self.diff.last_valid_out.is_empty()
+        if is_now_raw
+            && ch_is_vowel
+            && !self.diff.last_valid_out.is_empty()
             && self.diff.last_valid_raw_len < self.diff.raw_chars.len()
         {
             let split = Self::find_split_point(&self.diff.raw_chars);
@@ -198,7 +204,11 @@ impl Diffable for UltraFastViEngine {
 
                 let mut full_screen = committed_out.clone();
                 let _ = full_screen.push_str(&new_composed2);
-                let (bs, _) = Self::diff_into(&self.diff.prev_rendered, &full_screen, &mut self.diff.diff_suffix);
+                let (bs, _) = Self::diff_into(
+                    &self.diff.prev_rendered,
+                    &full_screen,
+                    &mut self.diff.diff_suffix,
+                );
 
                 self.diff.raw_chars = new_syl_raw;
                 // CRITICAL FIX: Sync raw_len with diff.raw_chars after V-C-V split
@@ -208,7 +218,8 @@ impl Diffable for UltraFastViEngine {
                 let _ = self.diff.prev_rendered.push_str(&new_composed2);
                 self.diff.prev_inner_render.clear();
                 let _ = self.diff.prev_inner_render.push_str(&new_composed2);
-                let is_new_raw = Self::is_raw_passthrough_slice(&self.diff.raw_chars, &new_composed2);
+                let is_new_raw =
+                    Self::is_raw_passthrough_slice(&self.diff.raw_chars, &new_composed2);
                 if is_new_raw {
                     self.diff.last_valid_raw_len = 0;
                     self.diff.last_valid_coda_start = 0;
@@ -224,7 +235,11 @@ impl Diffable for UltraFastViEngine {
         }
 
         // Normal path: diff from baseline → display_composed.
-        let (bs, _) = Self::diff_into(&diff_baseline, &display_composed, &mut self.diff.diff_suffix);
+        let (bs, _) = Self::diff_into(
+            &diff_baseline,
+            &display_composed,
+            &mut self.diff.diff_suffix,
+        );
         self.diff.prev_rendered.clear();
         let _ = self.diff.prev_rendered.push_str(&display_composed);
         (bs, &self.diff.diff_suffix)
@@ -283,7 +298,8 @@ impl Diffable for UltraFastViEngine {
             if self.raw_len != self.diff.raw_chars.len() {
                 panic!(
                     "raw_len ({}) != diff.raw_chars.len() ({}) after backspace_diff",
-                    self.raw_len, self.diff.raw_chars.len()
+                    self.raw_len,
+                    self.diff.raw_chars.len()
                 );
             }
         }
@@ -362,15 +378,31 @@ impl UltraFastViEngine {
         ch.is_whitespace()
             || matches!(
                 ch,
-                '.' | ',' | '!' | '?' | ';' | ':' | '"' | '\'' | '(' | ')' | '[' | ']' | '{'
-                    | '}' | '\n' | '\r' | '\t'
+                '.' | ','
+                    | '!'
+                    | '?'
+                    | ';'
+                    | ':'
+                    | '"'
+                    | '\''
+                    | '('
+                    | ')'
+                    | '['
+                    | ']'
+                    | '{'
+                    | '}'
+                    | '\n'
+                    | '\r'
+                    | '\t'
             )
     }
 
     /// Returns true if the composed output equals the raw input (no Vietnamese transforms).
     #[inline]
     pub(crate) fn is_raw_passthrough_slice(raw: &[char], composed: &str) -> bool {
-        if raw.is_empty() { return true; }
+        if raw.is_empty() {
+            return true;
+        }
         let mut ci = composed.chars();
         for &r in raw {
             match ci.next() {
@@ -384,7 +416,9 @@ impl UltraFastViEngine {
     /// Find the V-C-V split point: index in raw_chars where the second syllable starts.
     pub(crate) fn find_split_point(raw: &[char]) -> usize {
         let n = raw.len();
-        if n == 0 { return 0; }
+        if n == 0 {
+            return 0;
+        }
         let new_vowel_pos = n - 1;
         let mut last_old_vowel = 0usize;
         let mut found_old_vowel = false;
@@ -395,7 +429,9 @@ impl UltraFastViEngine {
                 break;
             }
         }
-        if !found_old_vowel { return 0; }
+        if !found_old_vowel {
+            return 0;
+        }
         if last_old_vowel < new_vowel_pos {
             let first_cons_after_vowel = (last_old_vowel + 1..new_vowel_pos)
                 .find(|&i| !Self::is_ascii_vowel(raw[i] as u8))
@@ -427,8 +463,13 @@ impl UltraFastViEngine {
     }
 
     #[inline]
-    pub(crate) fn is_single_consonant_appended_slice(raw: &[char], last_valid_raw_len: usize) -> bool {
-        if raw.len() != last_valid_raw_len + 1 { return false; }
+    pub(crate) fn is_single_consonant_appended_slice(
+        raw: &[char],
+        last_valid_raw_len: usize,
+    ) -> bool {
+        if raw.len() != last_valid_raw_len + 1 {
+            return false;
+        }
         let ch = raw[last_valid_raw_len];
         !Self::is_ascii_vowel(ch as u8)
     }

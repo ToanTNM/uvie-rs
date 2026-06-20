@@ -47,15 +47,21 @@ impl ModifierHandler for UltraFastViEngine {
             let syl = self.buf.get(i);
             match syl.base {
                 b'u' => {
-                    if self.is_u_glide(i) { continue; }
+                    if self.is_u_glide(i) {
+                        continue;
+                    }
                     // FIX: For "uuw" -> "ưu", skip 'u' that has another 'u' BEFORE it (in search direction)
                     // Since we search backwards, i-1 is the "next" char in forward direction
                     // This ensures w modifies the FIRST 'u' in a consecutive "uu" sequence
-                    if i > nucleus_start && self.buf.get(i - 1).base == b'u' { continue; }
+                    if i > nucleus_start && self.buf.get(i - 1).base == b'u' {
+                        continue;
+                    }
                     if syl.flags & F_HORN != 0 {
                         let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
                         self.buf.set(i, reverted);
-                        if self.raw_len > 0 { self.raw_len -= 1; }
+                        if self.raw_len > 0 {
+                            self.raw_len -= 1;
+                        }
                         self.buf.push(Syl::literal(b'w', caps));
                         self.reapply_tone_after_nucleus_change();
                         return;
@@ -69,7 +75,9 @@ impl ModifierHandler for UltraFastViEngine {
                     if syl.flags & F_HORN != 0 {
                         let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
                         self.buf.set(i, reverted);
-                        if self.raw_len > 0 { self.raw_len -= 1; }
+                        if self.raw_len > 0 {
+                            self.raw_len -= 1;
+                        }
                         self.buf.push(Syl::literal(b'w', caps));
                         if i > 0 {
                             let prev = self.buf.get(i - 1);
@@ -94,11 +102,15 @@ impl ModifierHandler for UltraFastViEngine {
                     return;
                 }
                 b'a' => {
-                    if syl.flags & F_CIRCUMFLEX != 0 { continue; }
+                    if syl.flags & F_CIRCUMFLEX != 0 {
+                        continue;
+                    }
                     if syl.flags & F_HORN != 0 {
                         let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
                         self.buf.set(i, reverted);
-                        if self.raw_len > 0 { self.raw_len -= 1; }
+                        if self.raw_len > 0 {
+                            self.raw_len -= 1;
+                        }
                         self.buf.push(Syl::literal(b'w', caps));
                         self.reapply_tone_after_nucleus_change();
                         return;
@@ -118,7 +130,9 @@ impl ModifierHandler for UltraFastViEngine {
             if syl.base == b'w' && syl.flags & F_HORN != 0 {
                 let reverted = Syl::literal(b'w', syl.flags & F_CAPS != 0);
                 self.buf.set(i, reverted);
-                if self.raw_len > 0 { self.raw_len -= 1; }
+                if self.raw_len > 0 {
+                    self.raw_len -= 1;
+                }
                 self.buf.push(Syl::literal(b'w', caps));
                 self.reapply_tone_after_nucleus_change();
                 return;
@@ -153,7 +167,9 @@ impl ModifierHandler for UltraFastViEngine {
                     let reverted = Syl::literal(b'd', s.flags & F_CAPS != 0);
                     self.buf.set(i, reverted);
                     self.buf.push(Syl::literal(b'd', caps));
-                    if self.raw_len > 0 { self.raw_len -= 1; }
+                    if self.raw_len > 0 {
+                        self.raw_len -= 1;
+                    }
                     self.mark_all_literal();
                     return;
                 }
@@ -162,8 +178,7 @@ impl ModifierHandler for UltraFastViEngine {
             if s.base == b'd' && s.flags & F_LITERAL == 0 && s.flags & F_HORN == 0 {
                 let is_in_onset = (0..i).all(|j| {
                     let sj = self.buf.get(j);
-                    self.mode.classify[sj.base as usize] & IS_VOWEL == 0
-                        && sj.base != b'w'
+                    self.mode.classify[sj.base as usize] & IS_VOWEL == 0 && sj.base != b'w'
                 });
                 if !is_in_onset {
                     break;
@@ -197,7 +212,9 @@ impl ModifierHandler for UltraFastViEngine {
                 self.reapply_tone_after_nucleus_change();
                 return;
             }
-            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 { break; }
+            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 {
+                break;
+            }
         }
         self.buf.push(Syl::literal(b'6', false));
     }
@@ -217,7 +234,9 @@ impl ModifierHandler for UltraFastViEngine {
                 self.reapply_tone_after_nucleus_change();
                 return;
             }
-            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 { break; }
+            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 {
+                break;
+            }
         }
         self.buf.push(Syl::literal(b'7', false));
     }
@@ -237,7 +256,9 @@ impl ModifierHandler for UltraFastViEngine {
                 self.reapply_tone_after_nucleus_change();
                 return;
             }
-            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 { break; }
+            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 {
+                break;
+            }
         }
         self.buf.push(Syl::literal(b'8', false));
     }
@@ -261,7 +282,9 @@ impl ModifierHandler for UltraFastViEngine {
                 }
                 return;
             }
-            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 { break; }
+            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 {
+                break;
+            }
         }
         self.buf.push(Syl::literal(b'9', false));
     }

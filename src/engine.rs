@@ -4,7 +4,6 @@ use crate::diff::DiffState;
 use crate::modes::{InputMethod, Mode, mode_for};
 use crate::syllable::{SylBuf, SylStructure};
 
-
 // ---------------------------------------------------------------------------
 // Public engine struct
 // ---------------------------------------------------------------------------
@@ -63,23 +62,31 @@ impl UltraFastViEngine {
     pub fn set_quick_start(&mut self, enabled: bool) {
         self.enable_quick_start = enabled;
     }
-    pub fn quick_start(&self) -> bool { self.enable_quick_start }
+    pub fn quick_start(&self) -> bool {
+        self.enable_quick_start
+    }
 
     pub fn set_quick_telex(&mut self, enabled: bool) {
         self.enable_quick_telex = enabled;
     }
-    pub fn quick_telex(&self) -> bool { self.enable_quick_telex }
+    pub fn quick_telex(&self) -> bool {
+        self.enable_quick_telex
+    }
 
     pub fn set_modern_orthography(&mut self, enabled: bool) {
         self.enable_modern_orthography = enabled;
     }
-    pub fn modern_orthography(&self) -> bool { self.enable_modern_orthography }
+    pub fn modern_orthography(&self) -> bool {
+        self.enable_modern_orthography
+    }
 
     pub fn set_input_method(&mut self, method: InputMethod) {
         self.input_method = method;
         self.mode = mode_for(method);
     }
-    pub fn input_method(&self) -> InputMethod { self.input_method }
+    pub fn input_method(&self) -> InputMethod {
+        self.input_method
+    }
 
     // ------------------------------------------------------------------
     // State queries
@@ -89,13 +96,19 @@ impl UltraFastViEngine {
         self.buf.is_empty() && self.committed.is_empty()
     }
 
-    pub fn is_composing(&self) -> bool { !self.buf.is_empty() }
+    pub fn is_composing(&self) -> bool {
+        !self.buf.is_empty()
+    }
 
     /// Current logical raw length (may differ from push count due to double-cancel).
-    pub fn raw_len(&self) -> usize { self.raw_len }
+    pub fn raw_len(&self) -> usize {
+        self.raw_len
+    }
 
     /// Length of the diff-mode raw character buffer.
-    pub fn raw_chars_len(&self) -> usize { self.diff.raw_chars.len() }
+    pub fn raw_chars_len(&self) -> usize {
+        self.diff.raw_chars.len()
+    }
 
     /// Copy the diff-mode raw characters into a `String` for debugging/tests.
     #[cfg(feature = "std")]
@@ -103,7 +116,9 @@ impl UltraFastViEngine {
         self.diff.raw_chars.iter().collect()
     }
 
-    pub fn current_composing(&self) -> &str { &self.out_buf }
+    pub fn current_composing(&self) -> &str {
+        &self.out_buf
+    }
 
     /// Returns the classify flags for a raw byte in the current input mode.
     #[inline]
@@ -111,7 +126,9 @@ impl UltraFastViEngine {
         self.mode.classify[b as usize]
     }
 
-    pub fn committed_text(&self) -> &str { &self.committed }
+    pub fn committed_text(&self) -> &str {
+        &self.committed
+    }
 
     #[cfg(feature = "std")]
     pub fn current_output(&self) -> String {
@@ -195,10 +212,21 @@ impl UltraFastViEngine {
 
         if self.enable_quick_start {
             match lower {
-                'j' => { self.push_raw_key(b'g', false); self.push_raw_key(b'i', false); }
-                'f' => { self.push_raw_key(b'p', false); self.push_raw_key(b'h', false); }
-                'w' => { self.push_raw_key(b'q', false); self.push_raw_key(b'u', false); }
-                _ => { self.push_raw_key(lower as u8, caps); }
+                'j' => {
+                    self.push_raw_key(b'g', false);
+                    self.push_raw_key(b'i', false);
+                }
+                'f' => {
+                    self.push_raw_key(b'p', false);
+                    self.push_raw_key(b'h', false);
+                }
+                'w' => {
+                    self.push_raw_key(b'q', false);
+                    self.push_raw_key(b'u', false);
+                }
+                _ => {
+                    self.push_raw_key(lower as u8, caps);
+                }
             }
         } else if self.enable_quick_telex && self.raw_len > 0 {
             let prev = self.raw[self.raw_len - 1];

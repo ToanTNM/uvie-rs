@@ -1,7 +1,7 @@
 //! Integration tests for UltraFastViEngine::feed_diff - diff-based API.
 
-use uvie::diff::Diffable;
 use uvie::UltraFastViEngine;
+use uvie::diff::Diffable;
 
 fn apply_diff(screen: &mut String, bs: usize, suffix: &str) {
     let sc: Vec<char> = screen.chars().collect();
@@ -24,33 +24,47 @@ fn assert_diff(input: &str, expected: &str) {
 // ------------------------------------------------------------------
 
 #[test]
-fn diff_simple_word() { assert_diff("xin", "xin"); }
+fn diff_simple_word() {
+    assert_diff("xin", "xin");
+}
 
 #[test]
-fn diff_tone_mark() { assert_diff("tooi", "tôi"); }
+fn diff_tone_mark() {
+    assert_diff("tooi", "tôi");
+}
 
 #[test]
-fn diff_space_boundary() { assert_diff("xin chao", "xin chao"); }
+fn diff_space_boundary() {
+    assert_diff("xin chao", "xin chao");
+}
 
 // ------------------------------------------------------------------
 // Complex syllables
 // ------------------------------------------------------------------
 
 #[test]
-fn diff_diphthong_tone() { assert_diff("toanj", "toạn"); }
+fn diff_diphthong_tone() {
+    assert_diff("toanj", "toạn");
+}
 
 #[test]
-fn diff_diphthong_ng() { assert_diff("thuowngj", "thượng"); }
+fn diff_diphthong_ng() {
+    assert_diff("thuowngj", "thượng");
+}
 
 #[test]
-fn diff_medial_o() { assert_diff("ngoanf", "ngoàn"); }
+fn diff_medial_o() {
+    assert_diff("ngoanf", "ngoàn");
+}
 
 // ------------------------------------------------------------------
 // Rollback / invalid
 // ------------------------------------------------------------------
 
 #[test]
-fn diff_invalid_sequence() { assert_diff("fgh", "fgh"); }
+fn diff_invalid_sequence() {
+    assert_diff("fgh", "fgh");
+}
 
 // ------------------------------------------------------------------
 // Backspace
@@ -89,10 +103,14 @@ fn diff_backspace() {
 // ------------------------------------------------------------------
 
 #[test]
-fn diff_comma_boundary() { assert_diff("xin,", "xin,"); }
+fn diff_comma_boundary() {
+    assert_diff("xin,", "xin,");
+}
 
 #[test]
-fn diff_period_boundary() { assert_diff("xin.", "xin."); }
+fn diff_period_boundary() {
+    assert_diff("xin.", "xin.");
+}
 
 // ------------------------------------------------------------------
 // V-C-V boundary detection
@@ -135,7 +153,9 @@ fn diff_no_spurious_commit_tooi() {
 }
 
 #[test]
-fn diff_fast_typing_ddau() { assert_diff("ddaau", "đâu"); }
+fn diff_fast_typing_ddau() {
+    assert_diff("ddaau", "đâu");
+}
 
 // ------------------------------------------------------------------
 // Backspace + retype scenarios
@@ -219,7 +239,9 @@ fn diff_sticky_after_backspace() {
 // ------------------------------------------------------------------
 
 #[test]
-fn diff_gif() { assert_diff("gif", "gì"); }
+fn diff_gif() {
+    assert_diff("gif", "gì");
+}
 
 #[test]
 fn diff_tim_sequences() {
@@ -232,17 +254,23 @@ fn diff_tim_sequences() {
 // ------------------------------------------------------------------
 
 #[test]
-fn diff_boo_boo() { assert_diff("boo boo", "bô bô"); }
+fn diff_boo_boo() {
+    assert_diff("boo boo", "bô bô");
+}
 
 // ------------------------------------------------------------------
 // English passthrough
 // ------------------------------------------------------------------
 
 #[test]
-fn diff_english_clear() { assert_diff("clear", "clear"); }
+fn diff_english_clear() {
+    assert_diff("clear", "clear");
+}
 
 #[test]
-fn diff_english_blob() { assert_diff("blob", "blob"); }
+fn diff_english_blob() {
+    assert_diff("blob", "blob");
+}
 
 // ------------------------------------------------------------------
 // Double-cancel
@@ -265,7 +293,9 @@ fn diff_double_w_cancel() {
 // ------------------------------------------------------------------
 
 #[test]
-fn diff_dd_cancel() { assert_diff("ddd", "dd"); }
+fn diff_dd_cancel() {
+    assert_diff("ddd", "dd");
+}
 
 #[test]
 fn diff_ww_cancel() {

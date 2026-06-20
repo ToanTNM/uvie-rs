@@ -50,7 +50,9 @@ impl ToneHandler for UltraFastViEngine {
                     s.base == b'd' && s.flags & F_HORN != 0
                 });
                 if has_modified_consonant {
-                    if self.raw_len > 0 { self.raw_len -= 1; }
+                    if self.raw_len > 0 {
+                        self.raw_len -= 1;
+                    }
                     return;
                 }
             }
@@ -75,7 +77,9 @@ impl ToneHandler for UltraFastViEngine {
             };
             self.buf.set(carrier_idx, reverted);
 
-            if self.raw_len > 0 { self.raw_len -= 1; }
+            if self.raw_len > 0 {
+                self.raw_len -= 1;
+            }
             self.buf.push(Syl::consonant(b, caps));
             return;
         }
@@ -93,8 +97,7 @@ impl ToneHandler for UltraFastViEngine {
     fn tone_carrier_idx(&self) -> Option<usize> {
         let n = self.buf.len();
 
-        let (_onset_end, nucleus_start, nucleus_end, _coda_start) =
-            self.partition_syllable();
+        let (_onset_end, nucleus_start, nucleus_end, _coda_start) = self.partition_syllable();
 
         if nucleus_start >= nucleus_end {
             return None;
@@ -110,30 +113,63 @@ impl ToneHandler for UltraFastViEngine {
         let nuc_slice = &nuc[..take];
 
         let onset_raw = self.onset_raw_slice();
-        let (eff_nucleus_start, eff_nuc_slice, tone_offset) =
-            if onset_is_qu(onset_raw) && nucleus_start < n && self.buf.get(nucleus_start).base == b'u' {
-                let eff_start = nucleus_start + 1;
-                if eff_start < nucleus_end {
-                    let eff_len = (nucleus_end - eff_start).min(3);
-                    let mut enuc = ['\0'; 3];
-                    for i in 0..eff_len { enuc[i] = self.buf.get(eff_start + i).base_no_tone(); }
-                    (eff_start, enuc, 0usize)
-                } else {
-                    (nucleus_start, { let mut a = ['\0'; 3]; a[..take].copy_from_slice(nuc_slice); a }, 0)
+        let (eff_nucleus_start, eff_nuc_slice, tone_offset) = if onset_is_qu(onset_raw)
+            && nucleus_start < n
+            && self.buf.get(nucleus_start).base == b'u'
+        {
+            let eff_start = nucleus_start + 1;
+            if eff_start < nucleus_end {
+                let eff_len = (nucleus_end - eff_start).min(3);
+                let mut enuc = ['\0'; 3];
+                for i in 0..eff_len {
+                    enuc[i] = self.buf.get(eff_start + i).base_no_tone();
                 }
-            } else if onset_is_gi(onset_raw) && nucleus_start < n && self.buf.get(nucleus_start).base == b'i' {
-                let eff_start = nucleus_start + 1;
-                if eff_start < nucleus_end {
-                    let eff_len = (nucleus_end - eff_start).min(3);
-                    let mut enuc = ['\0'; 3];
-                    for i in 0..eff_len { enuc[i] = self.buf.get(eff_start + i).base_no_tone(); }
-                    (eff_start, enuc, 0usize)
-                } else {
-                    (nucleus_start, { let mut a = ['\0'; 3]; a[..take].copy_from_slice(nuc_slice); a }, 0)
-                }
+                (eff_start, enuc, 0usize)
             } else {
-                (nucleus_start, { let mut a = ['\0'; 3]; a[..take].copy_from_slice(nuc_slice); a }, 0)
-            };
+                (
+                    nucleus_start,
+                    {
+                        let mut a = ['\0'; 3];
+                        a[..take].copy_from_slice(nuc_slice);
+                        a
+                    },
+                    0,
+                )
+            }
+        } else if onset_is_gi(onset_raw)
+            && nucleus_start < n
+            && self.buf.get(nucleus_start).base == b'i'
+        {
+            let eff_start = nucleus_start + 1;
+            if eff_start < nucleus_end {
+                let eff_len = (nucleus_end - eff_start).min(3);
+                let mut enuc = ['\0'; 3];
+                for i in 0..eff_len {
+                    enuc[i] = self.buf.get(eff_start + i).base_no_tone();
+                }
+                (eff_start, enuc, 0usize)
+            } else {
+                (
+                    nucleus_start,
+                    {
+                        let mut a = ['\0'; 3];
+                        a[..take].copy_from_slice(nuc_slice);
+                        a
+                    },
+                    0,
+                )
+            }
+        } else {
+            (
+                nucleus_start,
+                {
+                    let mut a = ['\0'; 3];
+                    a[..take].copy_from_slice(nuc_slice);
+                    a
+                },
+                0,
+            )
+        };
 
         let eff_len = (nucleus_end - eff_nucleus_start).min(3);
         let eff_slice = &eff_nuc_slice[..eff_len];
@@ -165,10 +201,14 @@ impl ToneHandler for UltraFastViEngine {
             }
         }
 
-        let Some(tv) = tone_val else { return; };
+        let Some(tv) = tone_val else {
+            return;
+        };
         let new_carrier = self.tone_carrier_idx();
 
-        if new_carrier == old_carrier { return; }
+        if new_carrier == old_carrier {
+            return;
+        }
 
         if let Some(oc) = old_carrier {
             let s = self.buf.get_mut(oc);

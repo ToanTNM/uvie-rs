@@ -4,7 +4,7 @@ Ultra-fast Vietnamese input method engine (Telex, VNI) written in Rust.
 
 A `no_std` / `no-alloc` compatible library with zero external dependencies. Designed for sub-microsecond latency per keystroke through incremental state updates and positive syllable validation.
 
-**macOS implementation**: See [`UVieKey/`](UVieKey/) for the macOS menu bar app that uses this engine.
+**macOS implementation**: See [UVieKey](https://github.com/thuupx/UVieKey) for the macOS menu bar app that uses this engine.
 
 ## Features
 

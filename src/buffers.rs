@@ -6,26 +6,39 @@ pub struct CharVec<const N: usize> {
 }
 
 impl<const N: usize> Default for CharVec<N> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<const N: usize> CharVec<N> {
     #[inline]
     pub const fn new() -> Self {
-        Self { data: ['\0'; N], len: 0 }
+        Self {
+            data: ['\0'; N],
+            len: 0,
+        }
     }
 
     #[inline]
-    pub fn len(&self) -> usize { self.len }
+    pub fn len(&self) -> usize {
+        self.len
+    }
 
     #[inline]
-    pub fn is_empty(&self) -> bool { self.len == 0 }
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
 
     #[inline]
-    pub fn is_full(&self) -> bool { self.len >= N }
+    pub fn is_full(&self) -> bool {
+        self.len >= N
+    }
 
     #[inline]
-    pub fn clear(&mut self) { self.len = 0; }
+    pub fn clear(&mut self) {
+        self.len = 0;
+    }
 
     #[inline]
     pub fn try_push(&mut self, ch: char) -> bool {
@@ -74,14 +87,18 @@ impl<const N: usize> CharVec<N> {
 impl<const N: usize> core::ops::Deref for CharVec<N> {
     type Target = [char];
     #[inline]
-    fn deref(&self) -> &[char] { self.as_slice() }
+    fn deref(&self) -> &[char] {
+        self.as_slice()
+    }
 }
 
 impl<const N: usize> core::iter::FromIterator<char> for CharVec<N> {
     fn from_iter<I: IntoIterator<Item = char>>(iter: I) -> Self {
         let mut v = Self::new();
         for ch in iter {
-            if !v.try_push(ch) { break; }
+            if !v.try_push(ch) {
+                break;
+            }
         }
         v
     }
