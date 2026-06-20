@@ -8,9 +8,9 @@ on:
   pull_request:
 
 jobs:
-  test:
-    name: Test & lint
-    runs-on: macos-15
+  lint:
+    name: Format & Clippy
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -28,11 +28,46 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features
 
+  build:
+    name: Build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-latest, windows-latest]
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+            target2: x86_64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}${{ matrix.target2 && format(',{0}', matrix.target2) || '' }}
+
+      - name: Ensure Rust target is installed
+        run: rustup target add ${{ matrix.target }} ${{ matrix.target2 || '' }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+
       - name: Run tests
         run: cargo test
 
-      - name: Build release static library (arm64)
-        run: cargo build --release --target aarch64-apple-darwin
+      - name: Build release library
+        run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Build release static library (x86_64)
-        run: cargo build --release --target x86_64-apple-darwin
+      - name: Build macOS universal (macOS only)
+        if: matrix.os == 'macos-15'
+        run: cargo build --release --target ${{ matrix.target2 }}
