@@ -71,13 +71,13 @@ cargo build --release --no-default-features --features heapless
 
 ## Prebuilt releases
 
-GitHub releases provide ready-to-link static libraries:
+GitHub releases provide ready-to-run CLI binaries and ready-to-link static libraries:
 
 | Platform | Asset | Contents |
 | -------- | ----- | -------- |
-| macOS universal | `uvie-macos-universal.tar.gz` | `libuvie.a` (arm64 + x86_64), `uvie.h` |
-| Linux x86_64 | `uvie-linux-x86_64.tar.gz` | `libuvie.a`, `uvie.h` |
-| Windows x86_64 | `uvie-windows-x86_64.zip` | `uvie.lib`, `uvie.h` |
+| macOS universal | `uvie-macos-universal.tar.gz` | `uvie`, `libuvie.a` (arm64 + x86_64), `uvie.h` |
+| Linux x86_64 | `uvie-linux-x86_64.tar.gz` | `uvie`, `libuvie.a`, `uvie.h` |
+| Windows x86_64 | `uvie-windows-x86_64.zip` | `uvie.exe`, `uvie.lib`, `uvie.h` |
 
 See the [release workflow](.github/workflows/release.yml) for build details.
 

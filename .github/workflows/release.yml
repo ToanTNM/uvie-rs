@@ -1,4 +1,4 @@
-name: Release uvie library
+name: Release uvie binaries
 
 on:
   push:
@@ -30,19 +30,24 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
 
-      - name: Build Rust lib (arm64)
+      - name: Build Rust package (arm64)
         run: cargo build --release --target aarch64-apple-darwin
 
-      - name: Build Rust lib (x86_64)
+      - name: Build Rust package (x86_64)
         run: cargo build --release --target x86_64-apple-darwin
 
-      - name: Lipo Rust lib → universal
+      - name: Lipo Rust outputs to universal
         run: |
           mkdir -p dist/uvie
           lipo -create \
             target/aarch64-apple-darwin/release/libuvie.a \
             target/x86_64-apple-darwin/release/libuvie.a \
             -output dist/uvie/libuvie.a
+          lipo -create \
+            target/aarch64-apple-darwin/release/uvie \
+            target/x86_64-apple-darwin/release/uvie \
+            -output dist/uvie/uvie
+          chmod +x dist/uvie/uvie
 
       - name: Copy C header
         run: cp include/uvie.h dist/uvie/uvie.h
@@ -79,12 +84,13 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
 
-      - name: Build Rust lib
+      - name: Build Rust package
         run: cargo build --release --target x86_64-unknown-linux-gnu
 
-      - name: Copy C header
+      - name: Copy release outputs
         run: |
           mkdir -p dist/uvie
+          cp target/x86_64-unknown-linux-gnu/release/uvie dist/uvie/uvie
           cp target/x86_64-unknown-linux-gnu/release/libuvie.a dist/uvie/libuvie.a
           cp include/uvie.h dist/uvie/uvie.h
 
@@ -120,12 +126,13 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
 
-      - name: Build Rust lib
+      - name: Build Rust package
         run: cargo build --release --target x86_64-pc-windows-msvc
 
-      - name: Copy C header
+      - name: Copy release outputs
         run: |
           mkdir -p dist/uvie
+          cp target/x86_64-pc-windows-msvc/release/uvie.exe dist/uvie/uvie.exe
           cp target/x86_64-pc-windows-msvc/release/uvie.lib dist/uvie/uvie.lib
           cp include/uvie.h dist/uvie/uvie.h
 
@@ -164,13 +171,13 @@ jobs:
           body: |
             ## uvie ${{ github.ref_name }}
 
-            Cross-platform static libraries for the Vietnamese input engine.
+            Cross-platform executables and static libraries for the Vietnamese input engine.
 
             | Platform | Asset | Contents |
             | -------- | ----- | -------- |
-            | macOS universal | `uvie-macos-universal.tar.gz` | `libuvie.a` (arm64 + x86_64), `uvie.h` |
-            | Linux x86_64 | `uvie-linux-x86_64.tar.gz` | `libuvie.a`, `uvie.h` |
-            | Windows x86_64 | `uvie-windows-x86_64.zip` | `uvie.lib`, `uvie.h` |
+            | macOS universal | `uvie-macos-universal.tar.gz` | `uvie`, `libuvie.a` (arm64 + x86_64), `uvie.h` |
+            | Linux x86_64 | `uvie-linux-x86_64.tar.gz` | `uvie`, `libuvie.a`, `uvie.h` |
+            | Windows x86_64 | `uvie-windows-x86_64.zip` | `uvie.exe`, `uvie.lib`, `uvie.h` |
 
             ### Swift Package Manager / macOS app
             See the [UVieKey frontend repo](https://github.com/thuupx/UVieKey) for an example.
