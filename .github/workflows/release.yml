@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing git tag to build and release, for example v2.0.8'
+        description: 'Existing git tag to build and release, for example v2.0.9'
         required: true
         type: string
       draft:
@@ -172,11 +172,11 @@ jobs:
           pattern: uvie-*
           merge-multiple: true
 
-      - name: Create Draft Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-          draft: ${{ github.event_name != 'workflow_dispatch' || inputs.draft }}
+          draft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}
           generate_release_notes: true
           files: dist/*
           body: |
